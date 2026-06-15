@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EmpireAI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="topbar" aria-label="Game status">
+        <div>
+          <h1>EmpireAI</h1>
+          <p id="statusText">Select one of your armies.</p>
+        </div>
+        <div class="stats" aria-label="Score">
+          <div><span id="roundCount">1</span><small>Round</small></div>
+          <div><span id="humanCities">0</span><small>Your cities</small></div>
+          <div><span id="aiCities">0</span><small>AI cities</small></div>
+          <div><span id="aiLessons">0</span><small>Lessons</small></div>
+        </div>
+      </section>
+
+      <section class="play-area">
+        <aside class="panel">
+          <div class="actions">
+            <button id="endTurnBtn" type="button">Space: Skip Rest</button>
+            <button id="newGameBtn" type="button" onclick="startNewGame()">New Game</button>
+            <button id="trainBtn" type="button">Train 50</button>
+            <button id="resetBrainBtn" type="button">Reset AI</button>
+          </div>
+
+          <div class="rules">
+            <h2>Rules</h2>
+            <p>15 x 15 connected land map with lakes. Armies move one square in any of 8 directions and cannot enter water.</p>
+            <p>10 cities produce a new army every 5 turns for their owner. A city changes owner when an army enters it.</p>
+            <p>Enemy armies on the same square fight randomly until one army reaches 0 of 5 hitpoints.</p>
+            <p>Win by conquering all cities.</p>
+          </div>
+
+          <div class="brain">
+            <h2>AI Child</h2>
+            <dl id="brainStats"></dl>
+          </div>
+        </aside>
+
+        <section class="board-wrap" aria-label="15 by 15 game board">
+          <div id="board" class="board"></div>
+        </section>
+      </section>
+    </main>
+
+    <section id="victoryOverlay" class="victory-overlay" aria-live="assertive" aria-hidden="true">
+      <div id="starField" class="star-field"></div>
+      <div class="victory-message">
+        <p id="victoryKicker">Empire secured</p>
+        <h2 id="victoryTitle">Victory</h2>
+        <p id="victoryDetail">All cities have been conquered.</p>
+        <button id="victoryNewGameBtn" type="button" onclick="startNewGame()">New Game</button>
+      </div>
+    </section>
+
+    <script src="./game.js?v=newgame-fix"></script>
+  </body>
+</html>
