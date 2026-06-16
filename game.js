@@ -1,7 +1,9 @@
 const SIZE = 15;
 const CITY_COUNT = 10;
 const START_ARMIES = 3;
-const MAX_HP = 5;
+const START_TANKS = 1;
+const INFANTRY_HP = 5;
+const TANK_HP = 10;
 const PRODUCTION_ROUNDS = 5;
 const STORAGE_KEY = "empireAI.childBrain.v1";
 
@@ -27,6 +29,8 @@ const endTurnBtn = document.querySelector("#endTurnBtn");
 const newGameBtn = document.querySelector("#newGameBtn");
 const trainBtn = document.querySelector("#trainBtn");
 const resetBrainBtn = document.querySelector("#resetBrainBtn");
+const demoAiBtn = document.querySelector("#demoAiBtn");
+const demoTempoInput = document.querySelector("#demoTempoInput");
 const victoryOverlay = document.querySelector("#victoryOverlay");
 const victoryKicker = document.querySelector("#victoryKicker");
 const victoryTitle = document.querySelector("#victoryTitle");
@@ -41,6 +45,7 @@ let audioContext = null;
 let audioUnlocked = false;
 let gameToken = 0;
 let aiTurnTimer = null;
+let demoRunning = false;
 
 function defaultBrain() {
   return {
@@ -161,13 +166,26 @@ function placeCities(terrain) {
   return cities;
 }
 
-function makeArmy(owner, x, y) {
+function unitMaxHp(unit) {
+  return unit.type === "tank" ? TANK_HP : INFANTRY_HP;
+}
+
+function unitMoveRange(unit) {
+  return unit.type === "tank" ? 2 : 1;
+}
+
+function unitLabel(unit) {
+  return unit.type === "tank" ? "tank" : "army";
+}
+
+function makeUnit(owner, x, y, type = "infantry") {
   return {
     id: `${owner}-${crypto.randomUUID()}`,
     owner,
+    type,
     x,
     y,
-    hp: MAX_HP,
+    hp: type === "tank" ? TANK_HP : INFANTRY_HP,
     acted: false,
   };
 }
@@ -179,8 +197,12 @@ function nearbyLand(terrain, origin, count) {
   return cells.slice(0, count);
 }
 
-function newGame() {
+function newGame(options = {}) {
   gameToken += 1;
+  if (!options.keepDemoRunning) {
+    demoRunning = false;
+    setDemoControlsEnabled(true);
+  }
   if (aiTurnTimer) {
     clearTimeout(aiTurnTimer);
     aiTurnTimer = null;
@@ -191,9 +213,13 @@ function newGame() {
   const cities = placeCities(terrain);
   const humanStart = cities.find((city) => city.owner === "human");
   const aiStart = cities.find((city) => city.owner === "ai");
+  const humanStartCells = nearbyLand(terrain, humanStart, START_ARMIES + START_TANKS);
+  const aiStartCells = nearbyLand(terrain, aiStart, START_ARMIES + START_TANKS);
   const armies = [
-    ...nearbyLand(terrain, humanStart, START_ARMIES).map((cell) => makeArmy("human", cell.x, cell.y)),
-    ...nearbyLand(terrain, aiStart, START_ARMIES).map((cell) => makeArmy("ai", cell.x, cell.y)),
+    ...humanStartCells.slice(0, START_TANKS).map((cell) => makeUnit("human", cell.x, cell.y, "tank")),
+    ...humanStartCells.slice(START_TANKS).map((cell) => makeUnit("human", cell.x, cell.y)),
+    ...aiStartCells.slice(0, START_TANKS).map((cell) => makeUnit("ai", cell.x, cell.y, "tank")),
+    ...aiStartCells.slice(START_TANKS).map((cell) => makeUnit("ai", cell.x, cell.y)),
   ];
 
   state = {
@@ -206,7 +232,7 @@ function newGame() {
     winner: null,
     victoryAnnounced: false,
     aiMemory: [],
-    log: "Select one of your armies.",
+    log: options.demo ? "Demo AI vs AI training starts." : "Move the flashing unit.",
   };
   selectedArmyId = null;
   hideVictoryMessage();
@@ -237,17 +263,28 @@ function citiesFor(owner) {
 }
 
 function legalMoves(army, currentState = state) {
-  return directions
-    .map((dir) => ({ x: army.x + dir.dx, y: army.y + dir.dy }))
-    .filter((move) => {
-      if (!inBounds(move.x, move.y)) return false;
-      if (currentState.terrain[move.y][move.x] === "water") return false;
+  const moves = [];
+  const range = unitMoveRange(army);
+
+  for (let dy = -range; dy <= range; dy += 1) {
+    for (let dx = -range; dx <= range; dx += 1) {
+      if (dx === 0 && dy === 0) continue;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) > range) continue;
+      const move = { x: army.x + dx, y: army.y + dy };
+      if (!inBounds(move.x, move.y)) continue;
+      if (currentState.terrain[move.y][move.x] === "water") continue;
       const occupant = currentState.armies.find((unit) => unit.x === move.x && unit.y === move.y);
-      return !occupant || occupant.owner !== army.owner;
-    });
+      if (occupant?.owner === army.owner) continue;
+      moves.push(move);
+    }
+  }
+
+  return moves;
 }
 
 function resolveBattle(attacker, defender) {
+  const attackerType = attacker.type;
+  const defenderType = defender.type;
   while (attacker.hp > 0 && defender.hp > 0) {
     if (Math.random() < 0.5) defender.hp -= 1;
     else attacker.hp -= 1;
@@ -257,7 +294,7 @@ function resolveBattle(attacker, defender) {
   const winner = loser === attacker ? defender : attacker;
   state.armies = state.armies.filter((army) => army.id !== loser.id);
   winner.hp = Math.max(1, winner.hp);
-  return { winner, loser };
+  return { winner, loser, attackerType, defenderType };
 }
 
 function captureCity(army) {
@@ -402,6 +439,55 @@ function playBugleTone(ctx, startTime, frequency, duration, volume) {
   oscillator.stop(startTime + duration);
 }
 
+function playMetalClash(ctx, startTime, duration, volume) {
+  const bufferSize = Math.floor(ctx.sampleRate * duration);
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i += 1) {
+    const fade = 1 - i / bufferSize;
+    data[i] = (Math.random() * 2 - 1) * fade * fade;
+  }
+
+  const noise = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  filter.type = "bandpass";
+  filter.frequency.setValueAtTime(1850, startTime);
+  filter.Q.setValueAtTime(7, startTime);
+  gain.gain.setValueAtTime(volume, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  noise.buffer = buffer;
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(startTime);
+  noise.stop(startTime + duration);
+}
+
+function playBattleSound(battle) {
+  if (!battle) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().then(() => playBattleSound(battle));
+    return;
+  }
+
+  const tankInvolved = battle.attackerType === "tank" || battle.defenderType === "tank";
+  const now = ctx.currentTime + 0.02;
+  if (tankInvolved) {
+    playDrumHit(ctx, now, 88, 0.32, 0.5);
+    playMetalClash(ctx, now + 0.035, 0.18, 0.24);
+    playDrumHit(ctx, now + 0.12, 64, 0.26, 0.32);
+    playMetalClash(ctx, now + 0.17, 0.16, 0.16);
+    return;
+  }
+
+  playMetalClash(ctx, now, 0.12, 0.22);
+  playSnareHit(ctx, now + 0.05, 0.09, 0.16);
+  playMetalClash(ctx, now + 0.12, 0.1, 0.16);
+}
+
 function playCaptureFanfare() {
   const ctx = getAudioContext();
   if (!ctx) return;
@@ -482,6 +568,7 @@ async function performVisibleMove(army, target) {
     return { cancelled: true };
   }
   const result = moveArmy(army, target);
+  if (result.battle) playBattleSound(result.battle);
   if (result.captured) playCaptureFanfare();
   isAnimating = false;
   return result;
@@ -496,17 +583,33 @@ function readyHumanArmies() {
   return armiesFor("human").filter((army) => !army.acted && legalMoves(army).length > 0);
 }
 
+function activateNextHumanArmy() {
+  if (state.phase !== "human" || state.gameOver) {
+    selectedArmyId = null;
+    return null;
+  }
+
+  const selectedArmy = state.armies.find((army) => army.id === selectedArmyId);
+  if (selectedArmy?.owner === "human" && !selectedArmy.acted && legalMoves(selectedArmy).length > 0) {
+    return selectedArmy;
+  }
+
+  const nextArmy = readyHumanArmies()[0] || null;
+  selectedArmyId = nextArmy?.id || null;
+  return nextArmy;
+}
+
 function beginAiTurn() {
   selectedArmyId = null;
   state.phase = "ai";
-  state.log = "AI turn. The opponent is moving each army once.";
+  state.log = "AI turn. The opponent is moving each unit once.";
   const turnToken = gameToken;
   render();
   aiTurnTimer = setTimeout(() => runAiTurn(turnToken), 220);
 }
 
 function endHumanTurn() {
-  if (isAnimating || state.gameOver || state.phase !== "human") return;
+  if (demoRunning || isAnimating || state.gameOver || state.phase !== "human") return;
   armiesFor("human").forEach((army) => {
     army.acted = true;
   });
@@ -530,7 +633,7 @@ function scoreMove(army, move, currentState, learningBrain) {
     moveToCity: (12 - nearestCity) / 12,
     moveToEnemy: (12 - nearestEnemy) / 12,
     protectCity: (12 - nearestOwnCity) / 12,
-    stayAlive: army.hp / MAX_HP,
+    stayAlive: army.hp / unitMaxHp(army),
   };
 
   const score = Object.entries(features).reduce(
@@ -571,7 +674,7 @@ async function runAiTurn(turnToken = gameToken) {
     await wait(110);
   }
 
-  state.log = `AI moved. It captured ${captures} cit${captures === 1 ? "y" : "ies"} and destroyed ${kills} arm${kills === 1 ? "y" : "ies"}.`;
+  state.log = `AI moved. It captured ${captures} cit${captures === 1 ? "y" : "ies"} and destroyed ${kills} unit${kills === 1 ? "" : "s"}.`;
   finishRound();
 }
 
@@ -590,6 +693,7 @@ function finishRound() {
     beginAiTurn();
     return;
   }
+  activateNextHumanArmy();
   render();
 }
 
@@ -600,7 +704,7 @@ function produceArmies() {
     if (city.produce > 0) continue;
     city.produce = PRODUCTION_ROUNDS;
     if (!armyAt(city.x, city.y)) {
-      state.armies.push(makeArmy(city.owner, city.x, city.y));
+      state.armies.push(makeUnit(city.owner, city.x, city.y));
     }
   }
 }
@@ -644,22 +748,22 @@ function checkVictory() {
 }
 
 async function handleCellClick(x, y) {
-  if (isAnimating || state.gameOver || state.phase !== "human") return;
-  await unlockAudio();
+  if (demoRunning || isAnimating || state.gameOver || state.phase !== "human") return;
+  unlockAudio();
   const clickedArmy = armyAt(x, y);
 
   if (clickedArmy?.owner === "human" && !clickedArmy.acted) {
     selectedArmyId = clickedArmy.id;
-    state.log = "Choose a neighboring land square, city, or enemy army.";
+    state.log = "Move the flashing unit to a highlighted square, city, or enemy.";
     render();
     return;
   }
 
-  const army = state.armies.find((unit) => unit.id === selectedArmyId);
+  const army = activateNextHumanArmy();
   if (!army || army.acted) return;
   const legal = legalMoves(army).some((move) => move.x === x && move.y === y);
   if (!legal) {
-    state.log = "That army can move one square in any direction, but not into water or your own army.";
+    state.log = "That unit can move to a highlighted square, but not into water or your own unit.";
     render();
     return;
   }
@@ -670,32 +774,37 @@ async function handleCellClick(x, y) {
     return;
   }
   selectedArmyId = null;
-  if (result.battle?.loser.owner === "ai") state.log = "Your army won the battle.";
-  else if (result.battle?.loser.owner === "human") state.log = "Your army was destroyed in battle.";
+  if (result.battle?.loser.owner === "ai") state.log = "Your unit won the battle.";
+  else if (result.battle?.loser.owner === "human") state.log = "Your unit was destroyed in battle.";
   else if (result.captured) state.log = "You captured a city.";
-  else state.log = "Army moved.";
+  else state.log = "Unit moved.";
 
   checkVictory();
   if (!state.gameOver && allHumanArmiesActed()) {
     beginAiTurn();
   } else {
+    activateNextHumanArmy();
     render();
   }
 }
 
 function render() {
+  const activeArmy = demoRunning ? state.armies.find((army) => army.id === selectedArmyId) : activateNextHumanArmy();
   roundCount.textContent = state.round;
   humanCities.textContent = citiesFor("human").length;
   aiCities.textContent = citiesFor("ai").length;
   aiLessons.textContent = brain.lessons;
   const readyCount = readyHumanArmies().length;
+  const humanPrompt = state.log.includes("flashing unit") ? state.log : `${state.log} Move the flashing unit.`;
   statusText.textContent =
-    state.phase === "human" && !state.gameOver && readyCount > 0
-      ? `${state.log} ${readyCount} arm${readyCount === 1 ? "y is" : "ies are"} ready to move.`
+    demoRunning
+      ? state.log
+      : state.phase === "human" && !state.gameOver && readyCount > 0
+      ? `${humanPrompt} ${readyCount} unit${readyCount === 1 ? " is" : "s are"} ready.`
       : state.log;
   renderBrain();
 
-  const selectedArmy = state.armies.find((army) => army.id === selectedArmyId);
+  const selectedArmy = activeArmy;
   const readyArmyIds = new Set(readyHumanArmies().map((army) => army.id));
   const moveKeys = new Set(selectedArmy ? legalMoves(selectedArmy).map((move) => key(move.x, move.y)) : []);
 
@@ -721,15 +830,19 @@ function render() {
       const army = armyAt(x, y);
       if (army) {
         const marker = document.createElement("span");
-        marker.className = `army ${army.owner}`;
+        marker.className = `army ${army.owner} ${army.type}`;
         if (readyArmyIds.has(army.id)) {
           marker.classList.add("ready-army");
           cell.classList.add("ready-cell");
         }
+        if (army.id === selectedArmy?.id) {
+          marker.classList.add("active-army");
+          cell.classList.add("active-cell");
+        }
         if (army.acted) marker.classList.add("acted-army");
         marker.innerHTML = `<span class="army-symbol" aria-hidden="true"></span><span class="army-hp">${army.hp}</span>`;
         cell.append(marker);
-        cell.title = `${army.owner} army, ${army.hp} HP`;
+        cell.title = `${army.owner} ${unitLabel(army)}, ${army.hp} HP`;
       }
 
       if (selectedArmy?.x === x && selectedArmy?.y === y) cell.classList.add("selected");
@@ -803,6 +916,130 @@ function trainGames(count) {
   render();
 }
 
+function demoTempoMs() {
+  const seconds = Number.parseFloat(demoTempoInput.value);
+  const safeSeconds = Number.isFinite(seconds) ? Math.min(3, Math.max(0.1, seconds)) : 0.5;
+  demoTempoInput.value = safeSeconds.toFixed(1);
+  return safeSeconds * 1000;
+}
+
+function setDemoControlsEnabled(enabled) {
+  endTurnBtn.disabled = !enabled;
+  trainBtn.disabled = !enabled;
+  resetBrainBtn.disabled = !enabled;
+  demoAiBtn.disabled = !enabled;
+  demoTempoInput.disabled = !enabled;
+}
+
+function demoWinnerByScore() {
+  const humanScore = citiesFor("human").length * 3 + armiesFor("human").length;
+  const aiScore = citiesFor("ai").length * 3 + armiesFor("ai").length;
+  if (humanScore === aiScore) return null;
+  return humanScore > aiScore ? "human" : "ai";
+}
+
+function finishDemoTraining() {
+  if (state.gameOver) return;
+  const winner = demoWinnerByScore();
+  if (winner) {
+    state.gameOver = true;
+    state.winner = winner;
+    state.log =
+      winner === "human"
+        ? "Demo finished. Blue AI won by empire strength."
+        : "Demo finished. Red AI won by empire strength.";
+    learnFromGame(winner === "ai");
+  } else {
+    state.log = "Demo finished in balance. The AI watched a draw.";
+  }
+}
+
+async function runDemoSide(owner, delayMs, demoToken) {
+  state.phase = owner;
+  selectedArmyId = null;
+  const sideName = owner === "human" ? "Blue AI" : "Red AI";
+  state.log = `${sideName} is choosing moves.`;
+  render();
+  await wait(delayMs);
+
+  for (const army of [...armiesFor(owner)]) {
+    if (!demoRunning || demoToken !== gameToken || state.gameOver) return false;
+    if (!state.armies.includes(army) || army.acted) continue;
+    const choice = chooseAiMove(army, state, brain);
+    if (!choice) {
+      army.acted = true;
+      continue;
+    }
+
+    selectedArmyId = army.id;
+    state.log = `${sideName} moves a ${unitLabel(army)}.`;
+    render();
+    await wait(delayMs);
+
+    const beforeEnemyCount = armiesFor(owner === "human" ? "ai" : "human").length;
+    const result = await performVisibleMove(army, choice.move, demoToken);
+    if (result.cancelled) return false;
+    if (owner === "ai") state.aiMemory.push(choice.features);
+    if (result.captured && owner === "human") state.aiMemory.push({ captureCity: 0.25 });
+    if (armiesFor(owner === "human" ? "ai" : "human").length < beforeEnemyCount) {
+      state.log = `${sideName} destroyed an enemy unit.`;
+    } else if (result.captured) {
+      state.log = `${sideName} captured a city.`;
+    } else {
+      state.log = `${sideName} moved.`;
+    }
+    checkVictory();
+    render();
+    await wait(delayMs);
+  }
+
+  return true;
+}
+
+async function runDemoAiGame() {
+  if (demoRunning) return;
+  unlockAudio();
+  const delayMs = demoTempoMs();
+  demoRunning = true;
+  setDemoControlsEnabled(false);
+  newGame({ demo: true, keepDemoRunning: true });
+  const demoToken = gameToken;
+
+  try {
+    while (demoRunning && demoToken === gameToken && !state.gameOver && state.round <= 120) {
+      const humanDone = await runDemoSide("human", delayMs, demoToken);
+      if (!humanDone) break;
+      const aiDone = await runDemoSide("ai", delayMs, demoToken);
+      if (!aiDone) break;
+      produceArmies();
+      armiesFor("human").forEach((army) => {
+        army.acted = false;
+      });
+      armiesFor("ai").forEach((army) => {
+        army.acted = false;
+      });
+      state.round += 1;
+      state.phase = "human";
+      checkVictory();
+      render();
+      await wait(delayMs);
+    }
+
+    if (demoRunning && demoToken === gameToken && !state.gameOver) {
+      finishDemoTraining();
+      render();
+    }
+  } finally {
+    if (demoToken === gameToken) {
+      demoRunning = false;
+      selectedArmyId = null;
+      state.phase = "human";
+      setDemoControlsEnabled(true);
+      if (!state.gameOver) render();
+    }
+  }
+}
+
 boardEl.addEventListener("pointerdown", () => {
   unlockAudio();
 });
@@ -819,15 +1056,18 @@ document.addEventListener("keydown", (event) => {
   endHumanTurn();
 });
 trainBtn.addEventListener("click", () => {
+  if (demoRunning) return;
   unlockAudio();
   trainGames(50);
 });
 resetBrainBtn.addEventListener("click", () => {
+  if (demoRunning) return;
   unlockAudio();
   brain = defaultBrain();
   saveBrain();
   state.log = "AI learning reset.";
   render();
 });
+demoAiBtn.addEventListener("click", runDemoAiGame);
 
 newGame();
