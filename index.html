@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EmpireAI</title>
-    <link rel="stylesheet" href="./styles.css?v=rules-modal-1" />
+    <link rel="stylesheet" href="./styles.css?v=training-labels-1" />
   </head>
   <body>
     <main class="app">
@@ -26,13 +26,17 @@
           <div class="actions">
             <button id="endTurnBtn" type="button">Space: Skip Rest</button>
             <button id="newGameBtn" type="button" onclick="startNewGame()">New Game</button>
-            <button id="trainBtn" type="button">Train 50</button>
+            <button id="trainBtn" type="button">Background training</button>
+            <label class="compact-field">
+              <span>Training games</span>
+              <input id="trainCountInput" type="number" min="1" max="10000" step="50" value="100" />
+            </label>
             <button id="resetBrainBtn" type="button">Reset AI</button>
             <label class="tempo-field">
               <span>Demo tempo</span>
               <input id="demoTempoInput" type="number" min="0.1" max="3" step="0.1" value="0.5" />
             </label>
-            <button id="demoAiBtn" type="button">Demo AI vs AI</button>
+            <button id="demoAiBtn" type="button">Live AI Demo</button>
           </div>
 
           <button id="rulesBtn" class="rules-button" type="button">Explain rules</button>
@@ -40,6 +44,7 @@
           <div class="brain">
             <h2>AI Child</h2>
             <dl id="brainStats"></dl>
+            <div id="trainProgress" class="train-progress" aria-live="polite">Ready to train</div>
           </div>
         </aside>
 
@@ -54,7 +59,7 @@
       <div class="victory-message">
         <p id="victoryKicker">Empire secured</p>
         <h2 id="victoryTitle">Victory</h2>
-        <p id="victoryDetail">All cities have been conquered.</p>
+        <p id="victoryDetail">The opponent has no units or cities left.</p>
         <button id="victoryNewGameBtn" type="button" onclick="startNewGame()">New Game</button>
       </div>
     </section>
@@ -67,10 +72,10 @@
         <p>Both empires begin with 3 armies and 1 armored tank. Armies have 5 HP; tanks have 10 HP.</p>
         <p>10 cities produce a new army every 5 turns for their owner. A city changes owner when an army enters it.</p>
         <p>Enemy armies on the same square fight randomly until one army reaches 0 of 5 hitpoints.</p>
-        <p>Win by conquering all cities.</p>
+        <p>Win when the opponent has no units and no owned cities left. Black unoccupied cities do not need to be conquered.</p>
       </div>
     </section>
 
-    <script src="./game.js?v=rules-modal-1"></script>
+    <script src="./game.js?v=city-heuristic-1"></script>
   </body>
 </html>

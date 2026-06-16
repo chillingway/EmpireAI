@@ -131,6 +131,7 @@ h2 {
   color: white;
 }
 
+.compact-field,
 .tempo-field {
   display: grid;
   grid-template-columns: 1fr 54px;
@@ -146,6 +147,11 @@ h2 {
   font-weight: 700;
 }
 
+.compact-field {
+  grid-template-columns: 1fr 68px;
+}
+
+.compact-field input,
 .tempo-field input {
   width: 100%;
   min-height: 26px;
@@ -174,6 +180,17 @@ h2 {
   grid-template-columns: 1fr auto;
   gap: 6px 10px;
   margin: 0;
+}
+
+.train-progress {
+  margin-top: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8faf7;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
 }
 
 .brain dt {
@@ -500,6 +517,10 @@ h2 {
   margin: 8px 0;
   font-size: clamp(2.2rem, 8vw, 5rem);
   line-height: 0.95;
+}
+
+.victory-message.training h2 {
+  font-size: clamp(2rem, 6vw, 4rem);
 }
 
 .victory-message button {

@@ -25,11 +25,13 @@ const humanCities = document.querySelector("#humanCities");
 const aiCities = document.querySelector("#aiCities");
 const aiLessons = document.querySelector("#aiLessons");
 const brainStats = document.querySelector("#brainStats");
+const trainProgress = document.querySelector("#trainProgress");
 const endTurnBtn = document.querySelector("#endTurnBtn");
 const newGameBtn = document.querySelector("#newGameBtn");
 const trainBtn = document.querySelector("#trainBtn");
 const resetBrainBtn = document.querySelector("#resetBrainBtn");
 const demoAiBtn = document.querySelector("#demoAiBtn");
+const trainCountInput = document.querySelector("#trainCountInput");
 const demoTempoInput = document.querySelector("#demoTempoInput");
 const rulesBtn = document.querySelector("#rulesBtn");
 const rulesModal = document.querySelector("#rulesModal");
@@ -49,16 +51,21 @@ let audioUnlocked = false;
 let gameToken = 0;
 let aiTurnTimer = null;
 let demoRunning = false;
+let trainingRunning = false;
 
 function defaultBrain() {
   return {
     lessons: 0,
-    wins: 0,
-    losses: 0,
+    records: {
+      human: { wins: 0, losses: 0 },
+      ai: { wins: 0, losses: 0 },
+    },
     weights: {
-      captureCity: 4.5,
-      attackEnemy: 2.6,
-      moveToCity: 1.1,
+      captureCity: 7,
+      attackEnemy: 2.4,
+      moveToCity: 2.2,
+      cityAdvance: 3,
+      cityPressure: 1.5,
       moveToEnemy: 0.65,
       protectCity: 0.35,
       stayAlive: 0.8,
@@ -68,13 +75,38 @@ function defaultBrain() {
 
 function loadBrain() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultBrain();
+    return normalizeBrain(JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultBrain());
   } catch {
     return defaultBrain();
   }
 }
 
 let brain = loadBrain();
+
+function normalizeBrain(savedBrain) {
+  const freshBrain = defaultBrain();
+  const aiWins = Number.isFinite(savedBrain?.wins) ? savedBrain.wins : 0;
+  const aiLosses = Number.isFinite(savedBrain?.losses) ? savedBrain.losses : 0;
+
+  return {
+    ...freshBrain,
+    ...savedBrain,
+    records: {
+      human: {
+        wins: savedBrain?.records?.human?.wins ?? aiLosses,
+        losses: savedBrain?.records?.human?.losses ?? aiWins,
+      },
+      ai: {
+        wins: savedBrain?.records?.ai?.wins ?? aiWins,
+        losses: savedBrain?.records?.ai?.losses ?? aiLosses,
+      },
+    },
+    weights: {
+      ...freshBrain.weights,
+      ...savedBrain?.weights,
+    },
+  };
+}
 
 function saveBrain() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(brain));
@@ -204,7 +236,9 @@ function newGame(options = {}) {
   gameToken += 1;
   if (!options.keepDemoRunning) {
     demoRunning = false;
+    trainingRunning = false;
     setDemoControlsEnabled(true);
+    setTrainingControlsEnabled(true);
   }
   if (aiTurnTimer) {
     clearTimeout(aiTurnTimer);
@@ -467,6 +501,43 @@ function playMetalClash(ctx, startTime, duration, volume) {
   noise.stop(startTime + duration);
 }
 
+function playGunShot(ctx, startTime, volume = 0.12) {
+  const bufferSize = Math.floor(ctx.sampleRate * 0.035);
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i += 1) {
+    const fade = 1 - i / bufferSize;
+    data[i] = (Math.random() * 2 - 1) * fade;
+  }
+
+  const noise = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  filter.type = "highpass";
+  filter.frequency.setValueAtTime(1800, startTime);
+  gain.gain.setValueAtTime(volume, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.035);
+  noise.buffer = buffer;
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(startTime);
+  noise.stop(startTime + 0.04);
+}
+
+function playMachineGunBurst(ctx, startTime, shots = 6, volume = 0.12) {
+  for (let i = 0; i < shots; i += 1) {
+    playGunShot(ctx, startTime + i * 0.045, volume * (0.85 + Math.random() * 0.3));
+  }
+}
+
+function playArtilleryBlast(ctx, startTime, volume = 0.48) {
+  playDrumHit(ctx, startTime, 72, 0.42, volume);
+  playDrumHit(ctx, startTime + 0.08, 48, 0.34, volume * 0.58);
+  playSnareHit(ctx, startTime + 0.035, 0.18, volume * 0.34);
+  playMetalClash(ctx, startTime + 0.13, 0.22, volume * 0.28);
+}
+
 function playBattleSound(battle) {
   if (!battle) return;
   const ctx = getAudioContext();
@@ -479,16 +550,26 @@ function playBattleSound(battle) {
   const tankInvolved = battle.attackerType === "tank" || battle.defenderType === "tank";
   const now = ctx.currentTime + 0.02;
   if (tankInvolved) {
-    playDrumHit(ctx, now, 88, 0.32, 0.5);
-    playMetalClash(ctx, now + 0.035, 0.18, 0.24);
-    playDrumHit(ctx, now + 0.12, 64, 0.26, 0.32);
-    playMetalClash(ctx, now + 0.17, 0.16, 0.16);
+    playArtilleryBlast(ctx, now, 0.5);
+    playMachineGunBurst(ctx, now + 0.12, 4, 0.08);
     return;
   }
 
-  playMetalClash(ctx, now, 0.12, 0.22);
-  playSnareHit(ctx, now + 0.05, 0.09, 0.16);
-  playMetalClash(ctx, now + 0.12, 0.1, 0.16);
+  playMachineGunBurst(ctx, now, 7, 0.13);
+  playMetalClash(ctx, now + 0.12, 0.1, 0.12);
+}
+
+function playCityCaptureSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().then(playCityCaptureSound);
+    return;
+  }
+
+  const now = ctx.currentTime + 0.02;
+  playArtilleryBlast(ctx, now, 0.42);
+  playMachineGunBurst(ctx, now + 0.18, 5, 0.08);
 }
 
 function playCaptureFanfare() {
@@ -529,9 +610,24 @@ function playVictoryFanfare() {
   playBugleTone(ctx, now + 0.68, 987.77, 0.38, 0.045);
 }
 
+function playTrainingFanfare() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().then(playTrainingFanfare);
+    return;
+  }
+  const now = ctx.currentTime + 0.02;
+  playDrumHit(ctx, now, 130, 0.14, 0.2);
+  playBugleTone(ctx, now + 0.02, 523.25, 0.16, 0.07);
+  playBugleTone(ctx, now + 0.16, 659.25, 0.18, 0.07);
+  playBugleTone(ctx, now + 0.32, 783.99, 0.24, 0.065);
+}
+
 function hideVictoryMessage() {
   victoryOverlay.classList.remove("show");
   victoryOverlay.setAttribute("aria-hidden", "true");
+  victoryOverlay.querySelector(".victory-message")?.classList.remove("training");
   starField.innerHTML = "";
 }
 
@@ -550,16 +646,28 @@ function launchVictoryStars() {
 }
 
 function showVictoryMessage(winner) {
+  victoryOverlay.querySelector(".victory-message")?.classList.remove("training");
   victoryKicker.textContent = winner === "human" ? "Empire secured" : "Empire lost";
   victoryTitle.textContent = winner === "human" ? "Victory" : "Defeat";
   victoryDetail.textContent =
     winner === "human"
-      ? "Your armies conquered every city."
-      : "The AI conquered every city.";
+      ? "Blue has destroyed every red unit and city."
+      : "Red has destroyed every blue unit and city.";
   victoryOverlay.classList.add("show");
   victoryOverlay.setAttribute("aria-hidden", "false");
   launchVictoryStars();
   playVictoryFanfare();
+}
+
+function showTrainingDoneMessage(count) {
+  victoryOverlay.querySelector(".victory-message")?.classList.add("training");
+  victoryKicker.textContent = "AI training";
+  victoryTitle.textContent = "Training has done";
+  victoryDetail.textContent = `${count} / ${count} games trained in the background.`;
+  victoryOverlay.classList.add("show");
+  victoryOverlay.setAttribute("aria-hidden", "false");
+  launchVictoryStars();
+  playTrainingFanfare();
 }
 
 async function performVisibleMove(army, target) {
@@ -572,7 +680,10 @@ async function performVisibleMove(army, target) {
   }
   const result = moveArmy(army, target);
   if (result.battle) playBattleSound(result.battle);
-  if (result.captured) playCaptureFanfare();
+  if (result.captured) {
+    playCityCaptureSound();
+    window.setTimeout(playCaptureFanfare, 260);
+  }
   isAnimating = false;
   return result;
 }
@@ -612,12 +723,17 @@ function beginAiTurn() {
 }
 
 function endHumanTurn() {
-  if (demoRunning || isAnimating || state.gameOver || state.phase !== "human") return;
+  if (trainingRunning || demoRunning || isAnimating || state.gameOver || state.phase !== "human") return;
   armiesFor("human").forEach((army) => {
     army.acted = true;
   });
   state.log = "You skipped the rest of your army moves.";
   beginAiTurn();
+}
+
+function nearestDistance(items, point, fallback = 12) {
+  if (!items.length) return fallback;
+  return Math.min(...items.map((item) => distance(point, item)));
 }
 
 function scoreMove(army, move, currentState, learningBrain) {
@@ -626,14 +742,19 @@ function scoreMove(army, move, currentState, learningBrain) {
   const enemyCities = currentState.cities.filter((item) => item.owner !== army.owner);
   const enemyArmies = currentState.armies.filter((unit) => unit.owner !== army.owner);
   const ownCities = currentState.cities.filter((item) => item.owner === army.owner);
-  const nearestCity = Math.min(...enemyCities.map((item) => distance(move, item)), 12);
-  const nearestEnemy = Math.min(...enemyArmies.map((unit) => distance(move, unit)), 12);
-  const nearestOwnCity = ownCities.length ? Math.min(...ownCities.map((item) => distance(move, item)), 12) : 12;
+  const currentNearestCity = nearestDistance(enemyCities, army);
+  const nearestCity = nearestDistance(enemyCities, move);
+  const nearestEnemy = nearestDistance(enemyArmies, move);
+  const nearestOwnCity = nearestDistance(ownCities, move);
+  const cityAdvance = Math.max(0, currentNearestCity - nearestCity) / unitMoveRange(army);
+  const cityPressure = nearestCity <= 3 ? (4 - nearestCity) / 4 : 0;
 
   const features = {
     captureCity: city && city.owner !== army.owner ? 1 : 0,
     attackEnemy: enemy ? 1 : 0,
     moveToCity: (12 - nearestCity) / 12,
+    cityAdvance,
+    cityPressure,
     moveToEnemy: (12 - nearestEnemy) / 12,
     protectCity: (12 - nearestOwnCity) / 12,
     stayAlive: army.hp / unitMaxHp(army),
@@ -712,6 +833,12 @@ function produceArmies() {
   }
 }
 
+function recordGameResult(winner) {
+  const loser = winner === "human" ? "ai" : "human";
+  brain.records[winner].wins += 1;
+  brain.records[loser].losses += 1;
+}
+
 function learnFromGame(aiWon) {
   const reward = aiWon ? 1 : -1;
   const rate = 0.08;
@@ -722,25 +849,26 @@ function learnFromGame(aiWon) {
     }
   }
   brain.lessons += 1;
-  if (aiWon) brain.wins += 1;
-  else brain.losses += 1;
+  recordGameResult(aiWon ? "ai" : "human");
   saveBrain();
 }
 
 function checkVictory() {
   if (state.gameOver) return;
-  const humanWon = citiesFor("human").length === CITY_COUNT;
-  const aiWon = citiesFor("ai").length === CITY_COUNT;
+  const humanResources = armiesFor("human").length + citiesFor("human").length;
+  const aiResources = armiesFor("ai").length + citiesFor("ai").length;
+  const humanWon = aiResources === 0;
+  const aiWon = humanResources === 0;
 
   if (humanWon) {
     state.gameOver = true;
     state.winner = "human";
-    state.log = "You win. You conquered every city.";
+    state.log = "You win. Red has no units or cities left.";
     learnFromGame(false);
   } else if (aiWon) {
     state.gameOver = true;
     state.winner = "ai";
-    state.log = "AI wins. It conquered every city and learned from this empire.";
+    state.log = "AI wins. Blue has no units or cities left.";
     learnFromGame(true);
   }
 
@@ -751,7 +879,7 @@ function checkVictory() {
 }
 
 async function handleCellClick(x, y) {
-  if (demoRunning || isAnimating || state.gameOver || state.phase !== "human") return;
+  if (trainingRunning || demoRunning || isAnimating || state.gameOver || state.phase !== "human") return;
   unlockAudio();
   const clickedArmy = armyAt(x, y);
 
@@ -801,6 +929,8 @@ function render() {
   const humanPrompt = state.log.includes("flashing unit") ? state.log : `${state.log} Move the flashing unit.`;
   statusText.textContent =
     demoRunning
+      ? state.log
+      : state.log.startsWith("Training complete")
       ? state.log
       : state.phase === "human" && !state.gameOver && readyCount > 0
       ? `${humanPrompt} ${readyCount} unit${readyCount === 1 ? " is" : "s are"} ready.`
@@ -861,12 +991,10 @@ function render() {
 
 function renderBrain() {
   const rows = [
-    ["Wins", brain.wins],
-    ["Losses", brain.losses],
-    ["Capture", brain.weights.captureCity.toFixed(2)],
-    ["Attack", brain.weights.attackEnemy.toFixed(2)],
-    ["Cities", brain.weights.moveToCity.toFixed(2)],
-    ["Enemies", brain.weights.moveToEnemy.toFixed(2)],
+    ["Blue wins", brain.records.human.wins],
+    ["Blue losses", brain.records.human.losses],
+    ["Red wins", brain.records.ai.wins],
+    ["Red losses", brain.records.ai.losses],
   ];
   brainStats.innerHTML = rows.map(([name, value]) => `<dt>${name}</dt><dd>${value}</dd>`).join("");
 }
@@ -887,36 +1015,110 @@ function cloneForSim(baseState) {
   };
 }
 
-function trainGames(count) {
-  const visibleState = state;
-  for (let i = 0; i < count; i += 1) {
-    newGame();
-    const sim = cloneForSim(state);
-    state = sim;
-    while (!state.gameOver && state.round < 120) {
-      for (const owner of ["human", "ai"]) {
-        for (const army of [...armiesFor(owner)]) {
-          if (!state.armies.includes(army)) continue;
-          const choice =
-            owner === "ai"
-              ? chooseAiMove(army, state, brain)
-              : { move: shuffle(legalMoves(army))[0], features: {} };
-          if (choice?.move) {
-            const result = moveArmy(army, choice.move);
-            if (owner === "ai") state.aiMemory.push(choice.features);
-            if (result.captured && owner === "human") state.aiMemory.push({ captureCity: 0.25 });
-          }
+function createTrainingState() {
+  const terrain = makeMap();
+  const cities = placeCities(terrain);
+  const humanStart = cities.find((city) => city.owner === "human");
+  const aiStart = cities.find((city) => city.owner === "ai");
+  const humanStartCells = nearbyLand(terrain, humanStart, START_ARMIES + START_TANKS);
+  const aiStartCells = nearbyLand(terrain, aiStart, START_ARMIES + START_TANKS);
+
+  return {
+    terrain,
+    cities,
+    armies: [
+      ...humanStartCells.slice(0, START_TANKS).map((cell) => makeUnit("human", cell.x, cell.y, "tank")),
+      ...humanStartCells.slice(START_TANKS).map((cell) => makeUnit("human", cell.x, cell.y)),
+      ...aiStartCells.slice(0, START_TANKS).map((cell) => makeUnit("ai", cell.x, cell.y, "tank")),
+      ...aiStartCells.slice(START_TANKS).map((cell) => makeUnit("ai", cell.x, cell.y)),
+    ],
+    round: 1,
+    phase: "training",
+    gameOver: false,
+    winner: null,
+    victoryAnnounced: false,
+    silent: true,
+    aiMemory: [],
+    log: "",
+  };
+}
+
+function runHiddenTrainingGame() {
+  state = createTrainingState();
+
+  while (!state.gameOver && state.round < 120) {
+    for (const owner of ["human", "ai"]) {
+      for (const army of [...armiesFor(owner)]) {
+        if (!state.armies.includes(army)) continue;
+        const choice =
+          owner === "ai"
+            ? chooseAiMove(army, state, brain)
+            : { move: shuffle(legalMoves(army))[0], features: {} };
+        if (choice?.move) {
+          const result = moveArmy(army, choice.move);
+          if (owner === "ai") state.aiMemory.push(choice.features);
+          if (result.captured && owner === "human") state.aiMemory.push({ captureCity: 0.25 });
         }
       }
-      produceArmies();
-      state.round += 1;
-      checkVictory();
     }
-    if (!state.gameOver) learnFromGame(citiesFor("ai").length + armiesFor("ai").length > citiesFor("human").length + armiesFor("human").length);
+    produceArmies();
+    state.round += 1;
+    checkVictory();
   }
-  state = visibleState;
-  state.log = `The AI child practiced ${count} simulated games.`;
-  render();
+
+  if (!state.gameOver) {
+    learnFromGame(citiesFor("ai").length + armiesFor("ai").length > citiesFor("human").length + armiesFor("human").length);
+  }
+}
+
+function setTrainingControlsEnabled(enabled) {
+  endTurnBtn.disabled = !enabled;
+  trainBtn.disabled = !enabled;
+  trainCountInput.disabled = !enabled;
+  resetBrainBtn.disabled = !enabled;
+  demoAiBtn.disabled = !enabled;
+  demoTempoInput.disabled = !enabled;
+}
+
+function trainingGameCount() {
+  const count = Number.parseInt(trainCountInput.value, 10);
+  const safeCount = Number.isFinite(count) ? Math.min(10000, Math.max(1, count)) : 100;
+  trainCountInput.value = String(safeCount);
+  return safeCount;
+}
+
+async function trainGames(count) {
+  if (trainingRunning) return;
+  unlockAudio();
+  trainingRunning = true;
+  setTrainingControlsEnabled(false);
+  const visibleState = state;
+  const trainingToken = gameToken;
+
+  try {
+    for (let game = 1; game <= count; game += 1) {
+      if (!trainingRunning || trainingToken !== gameToken) return;
+      runHiddenTrainingGame();
+      state = visibleState;
+      trainProgress.textContent = `${game} / ${count} games trained`;
+      state.log = `Training in background: ${game} / ${count} games trained.`;
+      aiLessons.textContent = brain.lessons;
+      renderBrain();
+      await wait(0);
+    }
+
+    state = visibleState;
+    state.log = `Training complete: ${count} / ${count} games trained.`;
+    trainProgress.textContent = `${count} / ${count} games trained`;
+    render();
+    showTrainingDoneMessage(count);
+  } finally {
+    if (trainingToken === gameToken) {
+      trainingRunning = false;
+      setTrainingControlsEnabled(true);
+    }
+    state = visibleState;
+  }
 }
 
 function demoTempoMs() {
@@ -1075,12 +1277,11 @@ document.addEventListener("keydown", (event) => {
   endHumanTurn();
 });
 trainBtn.addEventListener("click", () => {
-  if (demoRunning) return;
-  unlockAudio();
-  trainGames(50);
+  if (demoRunning || trainingRunning) return;
+  trainGames(trainingGameCount());
 });
 resetBrainBtn.addEventListener("click", () => {
-  if (demoRunning) return;
+  if (demoRunning || trainingRunning) return;
   unlockAudio();
   brain = defaultBrain();
   saveBrain();
