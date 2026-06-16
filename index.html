@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EmpireAI</title>
-    <link rel="stylesheet" href="./styles.css?v=training-labels-1" />
+    <link rel="stylesheet" href="./styles.css?v=v2-locked-cargo-1" />
   </head>
   <body>
     <main class="app">
@@ -48,7 +48,7 @@
           </div>
         </aside>
 
-        <section class="board-wrap" aria-label="15 by 15 game board">
+        <section class="board-wrap" aria-label="20 by 20 game board">
           <div id="board" class="board"></div>
         </section>
       </section>
@@ -64,18 +64,33 @@
       </div>
     </section>
 
+    <section id="productionModal" class="production-modal" aria-hidden="true">
+      <div class="production-dialog" role="dialog" aria-modal="true" aria-labelledby="productionTitle">
+        <button id="productionCloseBtn" class="production-close" type="button" aria-label="Close production chooser">×</button>
+        <h2 id="productionTitle">What unit city is going to produce?</h2>
+        <p id="productionCityText">Choose next unit for this city.</p>
+        <div id="productionOptions" class="production-options"></div>
+      </div>
+    </section>
+
     <section id="rulesModal" class="rules-modal" aria-hidden="true">
       <div class="rules-dialog" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
         <button id="rulesCloseBtn" class="rules-close" type="button" aria-label="Close rules">×</button>
         <h2 id="rulesTitle">Rules</h2>
-        <p>15 x 15 connected land map with lakes. Armies move one square in any of 8 directions and tanks move up to two.</p>
-        <p>Both empires begin with 3 armies and 1 armored tank. Armies have 5 HP; tanks have 10 HP.</p>
-        <p>10 cities produce a new army every 5 turns for their owner. A city changes owner when an army enters it.</p>
-        <p>Enemy armies on the same square fight randomly until one army reaches 0 of 5 hitpoints.</p>
+        <p>20 x 20 connected land map with larger lakes and sea routes. Army units move 1 square, tanks and transporter ships move 2, and fighter planes move 5.</p>
+        <p>Both empires begin with 3 armies and 1 armored tank. Cities can produce armies, armored tanks, transporter ships, and fighter planes.</p>
+        <p>Armies have 5 HP and strike for 1. Tanks have 10 HP and strike for 2. Transporter ships have 7 HP and strike for 1. Fighter planes have 3 HP, strike for 3, and have fuel for 15 movements.</p>
+        <p>Fighter planes cannot capture cities. Fighter fuel counts squares flown: 15 fuel means 15 squares. A fighter refuels by returning to a friendly city; if its fuel reaches 0 away from a friendly city, it crashes.</p>
+        <p>Land units stay on land. Transporter ships move only on water. Fighter planes can fly over land and sea.</p>
+        <p>Armies and tanks can board a friendly transporter by moving onto it. Units inside are locked and cannot move until the transporter unloads them.</p>
+        <p>A transporter carries up to 6 armies or 3 tanks, moves only on water, and can unload one carried unit to adjacent land when it is next to land.</p>
+        <p>10 cities produce a new unit every 5 turns for their owner. A city changes owner when a unit enters it.</p>
+        <p>Click a blue city to choose whether it will produce an army, armored tank, fighter plane, or transporter ship.</p>
+        <p>Enemy units on the same square fight randomly until one unit reaches 0 hitpoints.</p>
         <p>Win when the opponent has no units and no owned cities left. Black unoccupied cities do not need to be conquered.</p>
       </div>
     </section>
 
-    <script src="./game.js?v=city-heuristic-1"></script>
+    <script src="./game.js?v=v2-locked-cargo-1"></script>
   </body>
 </html>
