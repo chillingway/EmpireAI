@@ -111,12 +111,14 @@ function defaultBrain() {
     weights: {
       captureCity: 7,
       attackEnemy: 2.4,
+      attackTransport: 7.5,
       boardTransport: 1.8,
       unloadTransport: 3.2,
       moveToCity: 2.2,
       cityAdvance: 3,
       cityPressure: 1.5,
       moveToEnemy: 0.65,
+      moveToTransport: 2.8,
       protectCity: 0.35,
       stayAlive: 0.8,
     },
@@ -433,6 +435,10 @@ function armiesFor(owner) {
 
 function citiesFor(owner) {
   return state.cities.filter((city) => city.owner === owner);
+}
+
+function transportersFor(owner) {
+  return armiesFor(owner).filter((army) => army.type === "transport");
 }
 
 function legalMoves(army, currentState = state) {
@@ -827,8 +833,8 @@ function showVictoryMessage(winner) {
   victoryTitle.textContent = winner === "human" ? "Victory" : "Defeat";
   victoryDetail.textContent =
     winner === "human"
-      ? "Blue has destroyed every red unit and city."
-      : "Red has destroyed every blue unit and city.";
+      ? "Blue has destroyed every red unit, city, and transporter ship."
+      : "Red has destroyed every blue unit, city, and transporter ship.";
   victoryOverlay.classList.add("show");
   victoryOverlay.setAttribute("aria-hidden", "false");
   launchVictoryStars();
@@ -920,10 +926,12 @@ function scoreMove(army, move, currentState, learningBrain) {
   );
   const enemyCities = currentState.cities.filter((item) => item.owner !== army.owner);
   const enemyArmies = currentState.armies.filter((unit) => unit.owner !== army.owner);
+  const enemyTransports = enemyArmies.filter((unit) => unit.type === "transport");
   const ownCities = currentState.cities.filter((item) => item.owner === army.owner);
   const currentNearestCity = nearestDistance(enemyCities, army);
   const nearestCity = nearestDistance(enemyCities, move);
   const nearestEnemy = nearestDistance(enemyArmies, move);
+  const nearestTransport = nearestDistance(enemyTransports, move);
   const nearestOwnCity = nearestDistance(ownCities, move);
   const cityAdvance = Math.max(0, currentNearestCity - nearestCity) / unitMoveRange(army);
   const cityPressure = nearestCity <= 3 ? (4 - nearestCity) / 4 : 0;
@@ -931,12 +939,14 @@ function scoreMove(army, move, currentState, learningBrain) {
   const features = {
     captureCity: city && city.owner !== army.owner && !isFighter(army) ? 1 : 0,
     attackEnemy: enemy ? 1 : 0,
+    attackTransport: isFighter(army) && enemy?.type === "transport" ? 1 : 0,
     boardTransport: friendlyTransport ? 1 : 0,
     unloadTransport: canUnloadTransport(army, move, currentState) ? 1 : 0,
     moveToCity: (12 - nearestCity) / 12,
     cityAdvance,
     cityPressure,
     moveToEnemy: (12 - nearestEnemy) / 12,
+    moveToTransport: isFighter(army) ? (12 - nearestTransport) / 12 : 0,
     protectCity: (12 - nearestOwnCity) / 12,
     stayAlive: army.hp / unitMaxHp(army),
   };
@@ -1037,20 +1047,20 @@ function learnFromGame(aiWon, options = {}) {
 
 function checkVictory() {
   if (state.gameOver) return;
-  const humanResources = armiesFor("human").length + citiesFor("human").length;
-  const aiResources = armiesFor("ai").length + citiesFor("ai").length;
-  const humanWon = aiResources === 0;
-  const aiWon = humanResources === 0;
+  const humanUnits = armiesFor("human");
+  const aiUnits = armiesFor("ai");
+  const humanWon = aiUnits.length === 0 && citiesFor("ai").length === 0 && transportersFor("ai").length === 0;
+  const aiWon = humanUnits.length === 0 && citiesFor("human").length === 0 && transportersFor("human").length === 0;
 
   if (humanWon) {
     state.gameOver = true;
     state.winner = "human";
-    state.log = "You win. Red has no units or cities left.";
+    state.log = "You win. Red has no units, cities, or transporter ships left.";
     learnFromGame(false, { recordResult: state.recordResults !== false });
   } else if (aiWon) {
     state.gameOver = true;
     state.winner = "ai";
-    state.log = "AI wins. Blue has no units or cities left.";
+    state.log = "AI wins. Blue has no units, cities, or transporter ships left.";
     learnFromGame(true, { recordResult: state.recordResults !== false });
   }
 
