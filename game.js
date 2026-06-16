@@ -31,6 +31,9 @@ const trainBtn = document.querySelector("#trainBtn");
 const resetBrainBtn = document.querySelector("#resetBrainBtn");
 const demoAiBtn = document.querySelector("#demoAiBtn");
 const demoTempoInput = document.querySelector("#demoTempoInput");
+const rulesBtn = document.querySelector("#rulesBtn");
+const rulesModal = document.querySelector("#rulesModal");
+const rulesCloseBtn = document.querySelector("#rulesCloseBtn");
 const victoryOverlay = document.querySelector("#victoryOverlay");
 const victoryKicker = document.querySelector("#victoryKicker");
 const victoryTitle = document.querySelector("#victoryTitle");
@@ -1040,6 +1043,18 @@ async function runDemoAiGame() {
   }
 }
 
+function showRules() {
+  rulesModal.classList.add("show");
+  rulesModal.setAttribute("aria-hidden", "false");
+  rulesCloseBtn.focus();
+}
+
+function hideRules() {
+  rulesModal.classList.remove("show");
+  rulesModal.setAttribute("aria-hidden", "true");
+  rulesBtn.focus();
+}
+
 boardEl.addEventListener("pointerdown", () => {
   unlockAudio();
 });
@@ -1048,6 +1063,10 @@ endTurnBtn.addEventListener("click", () => {
   endHumanTurn();
 });
 document.addEventListener("keydown", (event) => {
+  if (event.code === "Escape" && rulesModal.classList.contains("show")) {
+    hideRules();
+    return;
+  }
   if (event.code !== "Space") return;
   const activeTag = document.activeElement?.tagName;
   if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
@@ -1067,6 +1086,11 @@ resetBrainBtn.addEventListener("click", () => {
   saveBrain();
   state.log = "AI learning reset.";
   render();
+});
+rulesBtn.addEventListener("click", showRules);
+rulesCloseBtn.addEventListener("click", hideRules);
+rulesModal.addEventListener("click", (event) => {
+  if (event.target === rulesModal) hideRules();
 });
 demoAiBtn.addEventListener("click", runDemoAiGame);
 

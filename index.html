@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EmpireAI</title>
-    <link rel="stylesheet" href="./styles.css?v=city-owner-colors-1" />
+    <link rel="stylesheet" href="./styles.css?v=rules-modal-1" />
   </head>
   <body>
     <main class="app">
@@ -32,17 +32,10 @@
               <span>Demo tempo</span>
               <input id="demoTempoInput" type="number" min="0.1" max="3" step="0.1" value="0.5" />
             </label>
-            <button id="demoAiBtn" type="button">Demo AI vs AI training</button>
+            <button id="demoAiBtn" type="button">Demo AI vs AI</button>
           </div>
 
-          <div class="rules">
-            <h2>Rules</h2>
-            <p>15 x 15 connected land map with lakes. Armies move one square in any of 8 directions and tanks move up to two.</p>
-            <p>Both empires begin with 3 armies and 1 armored tank. Armies have 5 HP; tanks have 10 HP.</p>
-            <p>10 cities produce a new army every 5 turns for their owner. A city changes owner when an army enters it.</p>
-            <p>Enemy armies on the same square fight randomly until one army reaches 0 of 5 hitpoints.</p>
-            <p>Win by conquering all cities.</p>
-          </div>
+          <button id="rulesBtn" class="rules-button" type="button">Explain rules</button>
 
           <div class="brain">
             <h2>AI Child</h2>
@@ -66,6 +59,18 @@
       </div>
     </section>
 
-    <script src="./game.js?v=demo-ai-2"></script>
+    <section id="rulesModal" class="rules-modal" aria-hidden="true">
+      <div class="rules-dialog" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+        <button id="rulesCloseBtn" class="rules-close" type="button" aria-label="Close rules">×</button>
+        <h2 id="rulesTitle">Rules</h2>
+        <p>15 x 15 connected land map with lakes. Armies move one square in any of 8 directions and tanks move up to two.</p>
+        <p>Both empires begin with 3 armies and 1 armored tank. Armies have 5 HP; tanks have 10 HP.</p>
+        <p>10 cities produce a new army every 5 turns for their owner. A city changes owner when an army enters it.</p>
+        <p>Enemy armies on the same square fight randomly until one army reaches 0 of 5 hitpoints.</p>
+        <p>Win by conquering all cities.</p>
+      </div>
+    </section>
+
+    <script src="./game.js?v=rules-modal-1"></script>
   </body>
 </html>
