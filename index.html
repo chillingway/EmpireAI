@@ -4,13 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EmpireAI</title>
-    <link rel="stylesheet" href="./styles.css?v=v2-unit-json-1" />
+    <link rel="stylesheet" href="./styles.css?v=v4-live-pause-1" />
   </head>
   <body>
     <main class="app">
       <section class="topbar" aria-label="Game status">
         <div>
-          <h1>EmpireAI</h1>
+          <div class="title-row">
+            <h1>EmpireAI</h1>
+            <span class="version-badge" title="GitHub commit version">GitHub b8334ef-dirty</span>
+          </div>
           <p id="statusText">Select one of your armies.</p>
         </div>
         <div class="stats" aria-label="Score">
@@ -26,6 +29,7 @@
           <div class="actions">
             <button id="endTurnBtn" type="button">Space: Skip Unit</button>
             <button id="newGameBtn" type="button" onclick="startNewGame()">New Game</button>
+            <button id="livePauseBtn" type="button">Stop Live Play</button>
             <button id="humanVsHumanBtn" type="button">Human vs Human</button>
             <button id="trainBtn" type="button">Background training</button>
             <label class="compact-field">
@@ -92,6 +96,6 @@
       </div>
     </section>
 
-    <script src="./game.js?v=v2-land-neutral-ai-1"></script>
+    <script src="./game.js?v=v4-live-pause-1"></script>
   </body>
 </html>

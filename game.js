@@ -113,6 +113,7 @@ const brainStats = document.querySelector("#brainStats");
 const trainProgress = document.querySelector("#trainProgress");
 const endTurnBtn = document.querySelector("#endTurnBtn");
 const newGameBtn = document.querySelector("#newGameBtn");
+const livePauseBtn = document.querySelector("#livePauseBtn");
 const humanVsHumanBtn = document.querySelector("#humanVsHumanBtn");
 const trainBtn = document.querySelector("#trainBtn");
 const resetBrainBtn = document.querySelector("#resetBrainBtn");
@@ -144,6 +145,7 @@ let aiTurnTimer = null;
 let demoRunning = false;
 let trainingRunning = false;
 let humanVsHuman = false;
+let livePlayPaused = false;
 let productionCityId = null;
 
 function defaultBrain() {
@@ -477,7 +479,7 @@ function chooseAiProductionType(owner = "ai") {
 }
 
 function chooseProductionType(owner) {
-  return !humanVsHuman ? chooseAiProductionType(owner) : "infantry";
+  return owner === "ai" && !humanVsHuman ? chooseAiProductionType(owner) : "infantry";
 }
 
 function makeUnit(owner, x, y, type = "infantry") {
@@ -503,6 +505,7 @@ function nearbyLand(terrain, origin, count) {
 
 function newGame(options = {}) {
   gameToken += 1;
+  livePlayPaused = false;
   if (!options.keepDemoRunning) {
     demoRunning = false;
     trainingRunning = false;
@@ -551,7 +554,6 @@ function newGame(options = {}) {
   selectedArmyId = null;
   hideVictoryMessage();
   render();
-  if (!state.humanVsHuman && !options.demo) beginHumanAiTurn();
 }
 
 function startNewGame() {
@@ -756,6 +758,15 @@ function getCellElement(x, y) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForLivePlay(ms, token = gameToken) {
+  await wait(ms);
+  while (livePlayPaused && token === gameToken && !state.gameOver && !trainingRunning) {
+    render();
+    await wait(150);
+  }
+  return token === gameToken && !state.gameOver;
 }
 
 async function animateArmyMove(army, target) {
@@ -1163,22 +1174,13 @@ function beginAiTurn() {
   state.log = "Red AI turn. Red is moving each unit once.";
   const turnToken = gameToken;
   render();
-  aiTurnTimer = setTimeout(() => runAiTurn("ai", turnToken), 220);
-}
-
-function beginHumanAiTurn() {
-  selectedArmyId = null;
-  state.skippedArmyIds = [];
-  state.phase = "human";
-  state.log = "Blue AI turn. Blue is moving each unit once.";
-  const turnToken = gameToken;
-  render();
-  aiTurnTimer = setTimeout(() => runAiTurn("human", turnToken), 220);
+  if (!livePlayPaused) aiTurnTimer = setTimeout(() => runAiTurn("ai", turnToken), 220);
 }
 
 function skipActiveUnit() {
   if (trainingRunning || demoRunning || isAnimating || state.gameOver || !["human", "ai"].includes(state.phase)) return;
-  if (!state.humanVsHuman) return;
+  if (livePlayPaused) return;
+  if (!state.humanVsHuman && state.phase !== "human") return;
   const owner = activePlayerOwner();
   const activeArmy = activateNextArmy();
   if (!activeArmy) return;
@@ -1301,7 +1303,7 @@ function rememberAiChoice(owner, features) {
 
 async function runAiTurn(owner = "ai", turnToken = gameToken) {
   aiTurnTimer = null;
-  if (turnToken !== gameToken || state.gameOver) return;
+  if (turnToken !== gameToken || state.gameOver || livePlayPaused) return;
   const aiUnits = [...armiesFor(owner)];
   const enemyOwner = opponentOwner(owner);
   const actorName = `${sideName(owner)} AI`;
@@ -1309,7 +1311,7 @@ async function runAiTurn(owner = "ai", turnToken = gameToken) {
   let kills = 0;
 
   for (const army of aiUnits) {
-    if (turnToken !== gameToken) return;
+    if (turnToken !== gameToken || livePlayPaused) return;
     if (!state.armies.includes(army)) continue;
     const choice = chooseAiMove(army);
     if (!choice) continue;
@@ -1325,7 +1327,7 @@ async function runAiTurn(owner = "ai", turnToken = gameToken) {
     checkVictory();
     render();
     if (state.gameOver) return;
-    await wait(110);
+    if (!(await waitForLivePlay(110, turnToken))) return;
   }
 
   state.log = `${actorName} moved. It captured ${captures} cit${captures === 1 ? "y" : "ies"} and destroyed ${kills} unit${
@@ -1333,6 +1335,34 @@ async function runAiTurn(owner = "ai", turnToken = gameToken) {
   }.`;
   if (owner === "human") beginAiTurn();
   else finishRound();
+}
+
+function pauseLivePlay() {
+  if (state.gameOver || trainingRunning || livePlayPaused) return;
+  livePlayPaused = true;
+  if (aiTurnTimer) {
+    clearTimeout(aiTurnTimer);
+    aiTurnTimer = null;
+  }
+  selectedArmyId = null;
+  state.log = "Live play stopped. Continue Live Play resumes this same game.";
+  render();
+}
+
+function continueLivePlay() {
+  if (state.gameOver || trainingRunning || !livePlayPaused) return;
+  livePlayPaused = false;
+  state.log = "Live play continues.";
+  render();
+  if (!demoRunning && !state.humanVsHuman && state.phase === "ai") {
+    aiTurnTimer = setTimeout(() => runAiTurn("ai", gameToken), 180);
+  }
+}
+
+function toggleLivePlay() {
+  unlockAudio();
+  if (livePlayPaused) continueLivePlay();
+  else pauseLivePlay();
 }
 
 function finishRound() {
@@ -1347,10 +1377,6 @@ function finishRound() {
   state.round += 1;
   state.phase = "human";
   checkVictory();
-  if (!state.gameOver && !state.humanVsHuman) {
-    beginHumanAiTurn();
-    return;
-  }
   if (!state.gameOver && allActiveArmiesActed()) {
     beginAiTurn();
     return;
@@ -1499,9 +1525,10 @@ async function handleCellClick(x, y) {
     trainingRunning ||
     demoRunning ||
     isAnimating ||
+    livePlayPaused ||
     state.gameOver ||
     !["human", "ai"].includes(state.phase) ||
-    !state.humanVsHuman ||
+    (!state.humanVsHuman && state.phase !== "human") ||
     productionModal.classList.contains("show")
   ) {
     return;
@@ -1580,6 +1607,8 @@ async function handleCellClick(x, y) {
 
 function render() {
   const activeArmy = demoRunning ? state.armies.find((army) => army.id === selectedArmyId) : activateNextArmy();
+  livePauseBtn.textContent = livePlayPaused ? "Continue Live Play" : "Stop Live Play";
+  livePauseBtn.disabled = trainingRunning || state.gameOver;
   roundCount.textContent = state.round;
   humanCities.textContent = citiesFor("human").length;
   aiCities.textContent = citiesFor("ai").length;
@@ -1587,11 +1616,13 @@ function render() {
   const readyCount = readyActiveArmies().length;
   const humanPrompt = state.log.includes("flashing unit") ? state.log : `${state.log} Move the flashing unit.`;
   statusText.textContent =
-    demoRunning
+    livePlayPaused
+      ? state.log
+      : demoRunning
       ? state.log
       : state.log.startsWith("Training complete")
       ? state.log
-      : !state.humanVsHuman
+      : !state.humanVsHuman && state.phase !== "human"
       ? state.log
       : ["human", "ai"].includes(state.phase) && !state.gameOver && readyCount > 0
       ? `${sideName(activePlayerOwner())}: ${humanPrompt} ${readyCount} unit${readyCount === 1 ? " is" : "s are"} ready.`
@@ -1746,6 +1777,7 @@ function runHiddenTrainingGame() {
 
 function setTrainingControlsEnabled(enabled) {
   endTurnBtn.disabled = !enabled;
+  livePauseBtn.disabled = !enabled || state?.gameOver;
   humanVsHumanBtn.disabled = !enabled;
   trainBtn.disabled = !enabled;
   trainCountInput.disabled = !enabled;
@@ -1840,10 +1872,11 @@ async function runDemoSide(owner, delayMs, demoToken) {
   const sideName = owner === "human" ? "Blue AI" : "Red AI";
   state.log = `${sideName} is choosing moves.`;
   render();
-  await wait(delayMs);
+  if (!(await waitForLivePlay(delayMs, demoToken))) return false;
 
   for (const army of [...armiesFor(owner)]) {
     if (!demoRunning || demoToken !== gameToken || state.gameOver) return false;
+    if (livePlayPaused && !(await waitForLivePlay(0, demoToken))) return false;
     if (!state.armies.includes(army) || army.acted) continue;
     const choice = chooseAiMove(army, state, brain);
     if (!choice) {
@@ -1854,7 +1887,7 @@ async function runDemoSide(owner, delayMs, demoToken) {
     selectedArmyId = army.id;
     state.log = `${sideName} moves ${unitLabelWithArticle(army)}.`;
     render();
-    await wait(delayMs);
+    if (!(await waitForLivePlay(delayMs, demoToken))) return false;
 
     const beforeEnemyCount = armiesFor(owner === "human" ? "ai" : "human").length;
     const result = await performVisibleMove(army, choice.move, demoToken);
@@ -1869,7 +1902,7 @@ async function runDemoSide(owner, delayMs, demoToken) {
     }
     checkVictory();
     render();
-    await wait(delayMs);
+    if (!(await waitForLivePlay(delayMs, demoToken))) return false;
   }
 
   return true;
@@ -1902,7 +1935,7 @@ async function runDemoAiGame() {
       state.phase = "human";
       checkVictory();
       render();
-      await wait(delayMs);
+      if (!(await waitForLivePlay(delayMs, demoToken))) break;
     }
 
     if (demoRunning && demoToken === gameToken && !state.gameOver) {
@@ -1939,6 +1972,7 @@ endTurnBtn.addEventListener("click", () => {
   unlockAudio();
   skipActiveUnit();
 });
+livePauseBtn.addEventListener("click", toggleLivePlay);
 document.addEventListener("keydown", (event) => {
   if (event.code === "Escape" && productionModal.classList.contains("show")) {
     hideProductionModal({ continueTurn: true });
