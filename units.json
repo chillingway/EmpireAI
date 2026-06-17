@@ -1,0 +1,39 @@
+{
+  "infantry": {
+    "label": "army",
+    "hitpoints": 5,
+    "speed": 1,
+    "productionTurns": 3,
+    "hitPower": 1,
+    "terrain": "land",
+    "produceWeight": 55
+  },
+  "tank": {
+    "label": "armored tank",
+    "hitpoints": 10,
+    "speed": 2,
+    "productionTurns": 6,
+    "hitPower": 2,
+    "terrain": "land",
+    "produceWeight": 22
+  },
+  "transport": {
+    "label": "transporter ship",
+    "hitpoints": 3,
+    "speed": 2,
+    "productionTurns": 5,
+    "hitPower": 1,
+    "terrain": "water",
+    "produceWeight": 13
+  },
+  "fighter": {
+    "label": "fighter plane",
+    "hitpoints": 1,
+    "speed": 6,
+    "productionTurns": 6,
+    "hitPower": 3,
+    "terrain": "air",
+    "fuel": 15,
+    "produceWeight": 10
+  }
+}

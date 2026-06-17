@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EmpireAI</title>
-    <link rel="stylesheet" href="./styles.css?v=v2-locked-cargo-1" />
+    <link rel="stylesheet" href="./styles.css?v=v2-unit-json-1" />
   </head>
   <body>
     <main class="app">
@@ -16,7 +16,7 @@
         <div class="stats" aria-label="Score">
           <div><span id="roundCount">1</span><small>Round</small></div>
           <div><span id="humanCities">0</span><small>Your cities</small></div>
-          <div><span id="aiCities">0</span><small>AI cities</small></div>
+          <div><span id="aiCities">0</span><small>Red cities</small></div>
           <div><span id="aiLessons">0</span><small>Lessons</small></div>
         </div>
       </section>
@@ -24,8 +24,9 @@
       <section class="play-area">
         <aside class="panel">
           <div class="actions">
-            <button id="endTurnBtn" type="button">Space: Skip Rest</button>
+            <button id="endTurnBtn" type="button">Space: Skip Unit</button>
             <button id="newGameBtn" type="button" onclick="startNewGame()">New Game</button>
+            <button id="humanVsHumanBtn" type="button">Human vs Human</button>
             <button id="trainBtn" type="button">Background training</button>
             <label class="compact-field">
               <span>Training games</span>
@@ -77,20 +78,20 @@
       <div class="rules-dialog" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
         <button id="rulesCloseBtn" class="rules-close" type="button" aria-label="Close rules">×</button>
         <h2 id="rulesTitle">Rules</h2>
-        <p>20 x 20 connected land map with larger lakes and sea routes. Army units move 1 square, tanks and transporter ships move 2, and fighter planes move 5.</p>
+        <p>20 x 20 sea map with independent connected islands. Army units move 1 square, tanks and transporter ships move 2, and fighter planes move 6.</p>
         <p>Both empires begin with 3 armies and 1 armored tank. Cities can produce armies, armored tanks, transporter ships, and fighter planes.</p>
-        <p>Armies have 5 HP and strike for 1. Tanks have 10 HP and strike for 2. Transporter ships have 7 HP and strike for 1. Fighter planes have 3 HP, strike for 3, and have fuel for 15 movements.</p>
+        <p>Armies have 5 HP and strike for 1. Tanks have 10 HP and strike for 2. Transporter ships have 3 HP and strike for 1. Fighter planes have 1 HP, strike for 3, and have fuel for 15 movements.</p>
         <p>Fighter planes cannot capture cities. Fighter fuel counts squares flown: 15 fuel means 15 squares. A fighter refuels by returning to a friendly city; if its fuel reaches 0 away from a friendly city, it crashes.</p>
         <p>Land units stay on land. Transporter ships move only on water. Fighter planes can fly over land and sea.</p>
-        <p>Armies and tanks can board a friendly transporter by moving onto it. Units inside are locked and cannot move until the transporter unloads them.</p>
+        <p>Armies and tanks can board a friendly transporter by moving onto the ship square. Units inside are locked and cannot move until the transporter unloads them.</p>
         <p>A transporter carries up to 6 armies or 3 tanks, moves only on water, and can unload one carried unit to adjacent land when it is next to land.</p>
-        <p>10 cities produce a new unit every 5 turns for their owner. A city changes owner when a unit enters it.</p>
+        <p>10 cities produce units for their owner: armies take 3 turns, tanks 6 turns, transporter ships 5 turns, and fighter planes 6 turns. A city changes owner when a unit enters it.</p>
         <p>Click a blue city to choose whether it will produce an army, armored tank, fighter plane, or transporter ship.</p>
         <p>Enemy units on the same square fight randomly until one unit reaches 0 hitpoints.</p>
-        <p>Win when the opponent has no units, transporter ships, and owned cities left. Black unoccupied cities do not need to be conquered.</p>
+        <p>Win when the opponent has no units, no owned cities, and every enemy transporter is sunk or neutralized so it cannot move or unload. Black unoccupied cities do not need to be conquered.</p>
       </div>
     </section>
 
-    <script src="./game.js?v=v2-transport-win-1"></script>
+    <script src="./game.js?v=v2-land-neutral-ai-1"></script>
   </body>
 </html>

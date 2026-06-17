@@ -4,49 +4,51 @@ const START_ARMIES = 3;
 const START_TANKS = 1;
 const TRANSPORT_CAPACITY = 6;
 const FIGHTER_FUEL = 15;
-const PRODUCTION_ROUNDS = 5;
 const STORAGE_KEY = "empireAI.childBrain.v1";
-const SCOREBOARD_VERSION = 3;
+const SCOREBOARD_VERSION = 4;
 
-const UNIT_TYPES = {
+const DEFAULT_UNIT_TYPES = {
   infantry: {
     label: "army",
-    hp: 5,
-    move: 1,
-    strike: 1,
+    hitpoints: 5,
+    speed: 1,
+    productionTurns: 3,
+    hitPower: 1,
     terrain: "land",
     produceWeight: 55,
   },
   tank: {
     label: "armored tank",
-    hp: 10,
-    move: 2,
-    strike: 2,
+    hitpoints: 10,
+    speed: 2,
+    productionTurns: 6,
+    hitPower: 2,
     terrain: "land",
     produceWeight: 22,
   },
   transport: {
     label: "transporter ship",
-    hp: 7,
-    move: 2,
-    strike: 1,
+    hitpoints: 3,
+    speed: 2,
+    productionTurns: 5,
+    hitPower: 1,
     terrain: "water",
     produceWeight: 13,
   },
   fighter: {
     label: "fighter plane",
-    hp: 3,
-    move: 5,
-    strike: 3,
+    hitpoints: 1,
+    speed: 6,
+    productionTurns: 6,
+    hitPower: 3,
     terrain: "air",
     fuel: FIGHTER_FUEL,
     produceWeight: 10,
   },
 };
 
-const PRODUCTION_POOL = Object.entries(UNIT_TYPES).flatMap(([type, config]) =>
-  Array.from({ length: config.produceWeight }, () => type),
-);
+let UNIT_TYPES = normalizeUnitTypes(DEFAULT_UNIT_TYPES);
+let PRODUCTION_POOL = buildProductionPool(UNIT_TYPES);
 
 const directions = [
   { dx: 0, dy: -1 },
@@ -59,6 +61,48 @@ const directions = [
   { dx: -1, dy: -1 },
 ];
 
+function normalizeUnitTypes(source) {
+  const normalized = {};
+
+  for (const [type, config] of Object.entries(source)) {
+    normalized[type] = {
+      ...config,
+      hp: config.hitpoints ?? config.hp ?? DEFAULT_UNIT_TYPES[type]?.hitpoints ?? DEFAULT_UNIT_TYPES.infantry.hitpoints,
+      move: config.speed ?? config.move ?? DEFAULT_UNIT_TYPES[type]?.speed ?? DEFAULT_UNIT_TYPES.infantry.speed,
+      strike: config.hitPower ?? config.strike ?? DEFAULT_UNIT_TYPES[type]?.hitPower ?? DEFAULT_UNIT_TYPES.infantry.hitPower,
+      productionTurns:
+        config.productionTurns ?? DEFAULT_UNIT_TYPES[type]?.productionTurns ?? DEFAULT_UNIT_TYPES.infantry.productionTurns,
+      terrain: config.terrain ?? DEFAULT_UNIT_TYPES[type]?.terrain ?? DEFAULT_UNIT_TYPES.infantry.terrain,
+      produceWeight: config.produceWeight ?? DEFAULT_UNIT_TYPES[type]?.produceWeight ?? 1,
+    };
+  }
+
+  return normalized;
+}
+
+function buildProductionPool(unitTypes) {
+  return Object.entries(unitTypes).flatMap(([type, config]) => Array.from({ length: config.produceWeight }, () => type));
+}
+
+async function loadUnitTypes() {
+  try {
+    const response = await fetch("./units.json?v=v2-unit-json-1", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Unit data request failed: ${response.status}`);
+    const json = await response.json();
+    const source = { ...DEFAULT_UNIT_TYPES, ...json };
+    if (source.army) {
+      if (!json.infantry) source.infantry = source.army;
+      delete source.army;
+    }
+    UNIT_TYPES = normalizeUnitTypes(source);
+    PRODUCTION_POOL = buildProductionPool(UNIT_TYPES);
+  } catch (error) {
+    console.warn("Using fallback unit data.", error);
+    UNIT_TYPES = normalizeUnitTypes(DEFAULT_UNIT_TYPES);
+    PRODUCTION_POOL = buildProductionPool(UNIT_TYPES);
+  }
+}
+
 const boardEl = document.querySelector("#board");
 const statusText = document.querySelector("#statusText");
 const roundCount = document.querySelector("#roundCount");
@@ -69,6 +113,7 @@ const brainStats = document.querySelector("#brainStats");
 const trainProgress = document.querySelector("#trainProgress");
 const endTurnBtn = document.querySelector("#endTurnBtn");
 const newGameBtn = document.querySelector("#newGameBtn");
+const humanVsHumanBtn = document.querySelector("#humanVsHumanBtn");
 const trainBtn = document.querySelector("#trainBtn");
 const resetBrainBtn = document.querySelector("#resetBrainBtn");
 const demoAiBtn = document.querySelector("#demoAiBtn");
@@ -98,6 +143,7 @@ let gameToken = 0;
 let aiTurnTimer = null;
 let demoRunning = false;
 let trainingRunning = false;
+let humanVsHuman = false;
 let productionCityId = null;
 
 function defaultBrain() {
@@ -110,12 +156,23 @@ function defaultBrain() {
     },
     weights: {
       captureCity: 7,
+      captureNeutralCity: 8.5,
+      landCaptureNeutralCity: 10,
       attackEnemy: 2.4,
       attackTransport: 7.5,
       boardTransport: 1.8,
-      unloadTransport: 3.2,
+      boardForNeutralExpansion: 4.4,
+      unloadTransport: 5.2,
+      loadedTransportAdvance: 5.4,
+      loadedTransportNeutralAdvance: 7.2,
+      unloadNearCity: 4.6,
+      unloadNearNeutralCity: 6.4,
       moveToCity: 2.2,
       cityAdvance: 3,
+      neutralCityAdvance: 4.8,
+      neutralCityPressure: 3.8,
+      landNeutralCityAdvance: 6.2,
+      landNeutralCityPressure: 5.4,
       cityPressure: 1.5,
       moveToEnemy: 0.65,
       moveToTransport: 2.8,
@@ -185,25 +242,88 @@ function inBounds(x, y) {
   return x >= 0 && y >= 0 && x < SIZE && y < SIZE;
 }
 
-function makeMap() {
-  const terrain = Array.from({ length: SIZE }, () => Array.from({ length: SIZE }, () => "land"));
-  const lakeSeeds = 10 + rand(5);
+function hasNearbyLand(terrain, cell, radius = 2) {
+  for (let y = cell.y - radius; y <= cell.y + radius; y += 1) {
+    for (let x = cell.x - radius; x <= cell.x + radius; x += 1) {
+      if (!inBounds(x, y)) continue;
+      if (terrain[y][x] === "land") return true;
+    }
+  }
+  return false;
+}
 
-  for (let i = 0; i < lakeSeeds; i += 1) {
-    let x = 2 + rand(SIZE - 4);
-    let y = 2 + rand(SIZE - 4);
-    const length = 7 + rand(9);
+function carveIsland(terrain, seeds, targetSize) {
+  const island = [];
+  const seen = new Set();
+  const frontier = [];
 
-    for (let step = 0; step < length; step += 1) {
-      if (inBounds(x, y)) terrain[y][x] = "water";
-      const dir = directions[rand(directions.length)];
-      x = Math.min(SIZE - 3, Math.max(2, x + dir.dx));
-      y = Math.min(SIZE - 3, Math.max(2, y + dir.dy));
+  for (const seed of seeds) {
+    if (!inBounds(seed.x, seed.y)) continue;
+    const seedKey = key(seed.x, seed.y);
+    if (seen.has(seedKey)) continue;
+    seen.add(seedKey);
+    terrain[seed.y][seed.x] = "land";
+    island.push(seed);
+    frontier.push(seed);
+  }
+
+  while (frontier.length && island.length < targetSize) {
+    const origin = frontier[rand(frontier.length)];
+    const candidates = shuffle(directions)
+      .map((dir) => ({ x: origin.x + dir.dx, y: origin.y + dir.dy }))
+      .filter((cell) => inBounds(cell.x, cell.y) && cell.x > 0 && cell.y > 0 && cell.x < SIZE - 1 && cell.y < SIZE - 1);
+
+    for (const cell of candidates) {
+      if (island.length >= targetSize) break;
+      const cellKey = key(cell.x, cell.y);
+      if (seen.has(cellKey)) continue;
+      seen.add(cellKey);
+      terrain[cell.y][cell.x] = "land";
+      island.push(cell);
+      frontier.push(cell);
     }
   }
 
-  terrain[1][1] = "land";
-  terrain[SIZE - 2][SIZE - 2] = "land";
+  return island;
+}
+
+function makeMap() {
+  const terrain = Array.from({ length: SIZE }, () => Array.from({ length: SIZE }, () => "water"));
+  carveIsland(
+    terrain,
+    [
+      { x: 1, y: 1 },
+      { x: 2, y: 1 },
+      { x: 1, y: 2 },
+      { x: 2, y: 2 },
+    ],
+    34,
+  );
+  carveIsland(
+    terrain,
+    [
+      { x: SIZE - 2, y: SIZE - 2 },
+      { x: SIZE - 3, y: SIZE - 2 },
+      { x: SIZE - 2, y: SIZE - 3 },
+      { x: SIZE - 3, y: SIZE - 3 },
+    ],
+    34,
+  );
+
+  const islandCount = 5 + rand(3);
+  for (let i = 0; i < islandCount; i += 1) {
+    let center = null;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const candidate = { x: 3 + rand(SIZE - 6), y: 3 + rand(SIZE - 6) };
+      if (!hasNearbyLand(terrain, candidate, 3)) {
+        center = candidate;
+        break;
+      }
+    }
+    if (!center) continue;
+    carveIsland(terrain, [center], 16 + rand(13));
+  }
+
   return terrain;
 }
 
@@ -225,17 +345,22 @@ function farEnough(cell, existing, minDistance) {
   return existing.every((other) => distance(cell, other) >= minDistance);
 }
 
+function makeCity(id, x, y, owner) {
+  const nextUnitType = producedUnitType();
+  return {
+    id,
+    x,
+    y,
+    owner,
+    produce: unitProductionTurns(nextUnitType),
+    nextUnitType,
+  };
+}
+
 function placeCities(terrain) {
   const cities = [
-    { id: "c-human", x: 1, y: 1, owner: "human", produce: PRODUCTION_ROUNDS, nextUnitType: producedUnitType() },
-    {
-      id: "c-ai",
-      x: SIZE - 2,
-      y: SIZE - 2,
-      owner: "ai",
-      produce: PRODUCTION_ROUNDS,
-      nextUnitType: producedUnitType(),
-    },
+    makeCity("c-human", 1, 1, "human"),
+    makeCity("c-ai", SIZE - 2, SIZE - 2, "ai"),
   ];
   const minimumCityDistance = SIZE <= 15 ? 2 : 3;
 
@@ -246,28 +371,14 @@ function placeCities(terrain) {
   for (const cell of candidates) {
     if (cities.length >= CITY_COUNT) break;
     if (farEnough(cell, cities, minimumCityDistance)) {
-      cities.push({
-        id: `c-${cities.length}`,
-        x: cell.x,
-        y: cell.y,
-        owner: "neutral",
-        produce: PRODUCTION_ROUNDS,
-        nextUnitType: producedUnitType(),
-      });
+      cities.push(makeCity(`c-${cities.length}`, cell.x, cell.y, "neutral"));
     }
   }
 
   for (const cell of candidates) {
     if (cities.length >= CITY_COUNT) break;
     if (!cities.some((city) => city.x === cell.x && city.y === cell.y)) {
-      cities.push({
-        id: `c-${cities.length}`,
-        x: cell.x,
-        y: cell.y,
-        owner: "neutral",
-        produce: PRODUCTION_ROUNDS,
-        nextUnitType: producedUnitType(),
-      });
+      cities.push(makeCity(`c-${cities.length}`, cell.x, cell.y, "neutral"));
     }
   }
 
@@ -286,8 +397,23 @@ function unitStrikePower(unit) {
   return UNIT_TYPES[unit.type]?.strike || UNIT_TYPES.infantry.strike;
 }
 
+function unitProductionTurns(type) {
+  return UNIT_TYPES[type]?.productionTurns || UNIT_TYPES.infantry.productionTurns;
+}
+
 function unitLabel(unit) {
   return UNIT_TYPES[unit.type]?.label || UNIT_TYPES.infantry.label;
+}
+
+function unitLabelWithArticle(unit) {
+  const label = unitLabel(unit);
+  return `${/^[aeiou]/i.test(label) ? "an" : "a"} ${label}`;
+}
+
+function cityProductionText(city) {
+  const type = city.nextUnitType || "infantry";
+  const turns = city.produce;
+  return `${city.owner} city, producing ${unitLabel({ type })}, ${turns} game turn${turns === 1 ? "" : "s"} left`;
 }
 
 function isFighter(unit) {
@@ -313,6 +439,11 @@ function canBoardTransport(unit, transport) {
   );
 }
 
+function canMoveOntoTransport(unit, transport) {
+  if (!canBoardTransport(unit, transport)) return false;
+  return distance(unit, transport) <= unitMoveRange(unit);
+}
+
 function canUnloadTransport(transport, target, currentState = state) {
   if (transport.type !== "transport" || !transport.cargo?.length) return false;
   if (distance(transport, target) > 1) return false;
@@ -331,21 +462,21 @@ function producedUnitType() {
   return PRODUCTION_POOL[rand(PRODUCTION_POOL.length)] || "infantry";
 }
 
-function chooseAiProductionType() {
-  const aiUnits = armiesFor("ai");
-  const aiCities = citiesFor("ai").length;
-  const transports = aiUnits.filter((unit) => unit.type === "transport").length;
-  const fighters = aiUnits.filter((unit) => unit.type === "fighter").length;
-  const tanks = aiUnits.filter((unit) => unit.type === "tank").length;
+function chooseAiProductionType(owner = "ai") {
+  const ownerUnits = armiesFor(owner);
+  const ownerCities = citiesFor(owner).length;
+  const transports = ownerUnits.filter((unit) => unit.type === "transport").length;
+  const fighters = ownerUnits.filter((unit) => unit.type === "fighter").length;
+  const tanks = ownerUnits.filter((unit) => unit.type === "tank").length;
 
-  if (transports < Math.max(1, Math.floor(aiCities / 3))) return "transport";
-  if (fighters < Math.max(1, Math.floor(aiCities / 2))) return "fighter";
-  if (tanks < Math.max(1, Math.floor(aiCities / 2))) return "tank";
+  if (transports < Math.max(1, Math.floor(ownerCities / 3))) return "transport";
+  if (fighters < Math.max(1, Math.floor(ownerCities / 2))) return "fighter";
+  if (tanks < Math.max(1, Math.floor(ownerCities / 2))) return "tank";
   return producedUnitType();
 }
 
 function chooseProductionType(owner) {
-  return owner === "ai" ? chooseAiProductionType() : "infantry";
+  return !humanVsHuman ? chooseAiProductionType(owner) : "infantry";
 }
 
 function makeUnit(owner, x, y, type = "infantry") {
@@ -374,6 +505,7 @@ function newGame(options = {}) {
   if (!options.keepDemoRunning) {
     demoRunning = false;
     trainingRunning = false;
+    humanVsHuman = !!options.humanVsHuman;
     setDemoControlsEnabled(true);
     setTrainingControlsEnabled(true);
   }
@@ -382,7 +514,7 @@ function newGame(options = {}) {
     aiTurnTimer = null;
   }
   isAnimating = false;
-  document.querySelectorAll(".army-flyer").forEach((flyer) => flyer.remove());
+  document.querySelectorAll(".army-flyer, .crash-explosion").forEach((effect) => effect.remove());
   const terrain = makeMap();
   const cities = placeCities(terrain);
   const humanStart = cities.find((city) => city.owner === "human");
@@ -406,17 +538,29 @@ function newGame(options = {}) {
     winner: null,
     victoryAnnounced: false,
     recordResults: true,
+    humanVsHuman,
+    skippedArmyIds: [],
     aiMemory: [],
-    log: options.demo ? "Demo AI vs AI training starts." : "Move the flashing unit.",
+    log: options.demo
+      ? "Demo AI vs AI training starts."
+      : humanVsHuman
+      ? "Human vs Human. Blue player moves first."
+      : "Move the flashing unit.",
   };
   selectedArmyId = null;
   hideVictoryMessage();
   render();
+  if (!state.humanVsHuman && !options.demo) beginHumanAiTurn();
 }
 
 function startNewGame() {
   unlockAudio();
   newGame();
+}
+
+function startHumanVsHumanGame() {
+  unlockAudio();
+  newGame({ humanVsHuman: true });
 }
 
 window.startNewGame = startNewGame;
@@ -441,9 +585,36 @@ function transportersFor(owner) {
   return armiesFor(owner).filter((army) => army.type === "transport");
 }
 
+function usableTransportersFor(owner) {
+  return transportersFor(owner).filter((transport) => legalMoves(transport).length > 0);
+}
+
+function activeUnitsFor(owner) {
+  return armiesFor(owner).filter((army) => army.type !== "transport").concat(usableTransportersFor(owner));
+}
+
+function activePlayerOwner() {
+  return state.phase === "ai" ? "ai" : "human";
+}
+
+function sideName(owner) {
+  return owner === "human" ? "Blue" : "Red";
+}
+
+function opponentOwner(owner) {
+  return owner === "human" ? "ai" : "human";
+}
+
 function legalMoves(army, currentState = state) {
   const moves = [];
+  const moveKeys = new Set();
   const range = unitMoveRange(army);
+  const addMove = (move) => {
+    const moveKey = key(move.x, move.y);
+    if (moveKeys.has(moveKey)) return;
+    moveKeys.add(moveKey);
+    moves.push(move);
+  };
 
   for (let dy = -range; dy <= range; dy += 1) {
     for (let dx = -range; dx <= range; dx += 1) {
@@ -454,17 +625,21 @@ function legalMoves(army, currentState = state) {
       if (isFighter(army) && distance(army, move) > (army.fuel ?? FIGHTER_FUEL)) continue;
       const occupant = currentState.armies.find((unit) => unit.x === move.x && unit.y === move.y);
       if (occupant?.owner === army.owner) {
-        if (canBoardTransport(army, occupant)) moves.push(move);
+        if (canMoveOntoTransport(army, occupant)) addMove(move);
         continue;
       }
       if (canUnloadTransport(army, move, currentState)) {
-        moves.push(move);
+        addMove(move);
         continue;
       }
       if (!canEnterTerrain(army, currentState.terrain[move.y][move.x])) continue;
-      moves.push(move);
+      addMove(move);
     }
   }
+
+  currentState.armies
+    .filter((unit) => canMoveOntoTransport(army, unit))
+    .forEach((transport) => addMove({ x: transport.x, y: transport.y }));
 
   return moves;
 }
@@ -489,8 +664,8 @@ function captureCity(army) {
   const city = cityAt(army.x, army.y);
   if (city && city.owner !== army.owner) {
     city.owner = army.owner;
-    city.produce = PRODUCTION_ROUNDS;
     city.nextUnitType = chooseProductionType(army.owner);
+    city.produce = unitProductionTurns(city.nextUnitType);
     return true;
   }
   return false;
@@ -505,8 +680,9 @@ function serviceFighter(unit, fuelCost) {
   }
   unit.fuel -= fuelCost;
   if (unit.fuel <= 0) {
+    const crash = { x: unit.x, y: unit.y };
     state.armies = state.armies.filter((army) => army.id !== unit.id);
-    return { crashed: true, refueled: false };
+    return { crashed: true, refueled: false, crash };
   }
   return { crashed: false, refueled: false };
 }
@@ -514,7 +690,7 @@ function serviceFighter(unit, fuelCost) {
 function moveArmy(army, target) {
   const fuelCost = distance(army, target);
   const defender = armyAt(target.x, target.y);
-  if (canBoardTransport(army, defender)) {
+  if (canMoveOntoTransport(army, defender)) {
     defender.cargo = [...(defender.cargo || []), { ...army, x: null, y: null, acted: true, insideTransport: true }];
     state.armies = state.armies.filter((unit) => unit.id !== army.id);
     return { moved: false, captured: false, boarded: true, transport: defender };
@@ -577,6 +753,20 @@ async function animateArmyMove(army, target) {
   await wait(260);
   flyer.remove();
   sourceArmy.style.visibility = originalVisibility;
+}
+
+function showCrashExplosion(x, y) {
+  const cell = getCellElement(x, y);
+  if (!cell) return;
+  const rect = cell.getBoundingClientRect();
+  const burst = document.createElement("span");
+  burst.className = "crash-explosion";
+  burst.style.left = `${rect.left + rect.width / 2}px`;
+  burst.style.top = `${rect.top + rect.height / 2}px`;
+  burst.style.width = `${Math.max(24, rect.width * 0.82)}px`;
+  burst.style.height = `${Math.max(24, rect.height * 0.82)}px`;
+  document.body.append(burst);
+  window.setTimeout(() => burst.remove(), 720);
 }
 
 function getAudioContext() {
@@ -741,6 +931,20 @@ function playBattleSound(battle) {
   playMetalClash(ctx, now + 0.12, 0.1, 0.12);
 }
 
+function playCrashExplosionSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().then(playCrashExplosionSound);
+    return;
+  }
+
+  const now = ctx.currentTime + 0.02;
+  playArtilleryBlast(ctx, now, 0.54);
+  playMachineGunBurst(ctx, now + 0.14, 3, 0.07);
+  playMetalClash(ctx, now + 0.24, 0.22, 0.2);
+}
+
 function playCityCaptureSound() {
   const ctx = getAudioContext();
   if (!ctx) return;
@@ -829,12 +1033,12 @@ function launchVictoryStars() {
 
 function showVictoryMessage(winner) {
   victoryOverlay.querySelector(".victory-message")?.classList.remove("training");
-  victoryKicker.textContent = winner === "human" ? "Empire secured" : "Empire lost";
-  victoryTitle.textContent = winner === "human" ? "Victory" : "Defeat";
+  victoryKicker.textContent = winner === "human" || state.humanVsHuman ? "Empire secured" : "Empire lost";
+  victoryTitle.textContent = winner === "human" ? "Blue Victory" : state.humanVsHuman ? "Red Victory" : "Defeat";
   victoryDetail.textContent =
     winner === "human"
-      ? "Blue has destroyed every red unit, city, and transporter ship."
-      : "Red has destroyed every blue unit, city, and transporter ship.";
+      ? "Blue has destroyed every red unit and city, and sunk or neutralized every red transporter."
+      : "Red has destroyed every blue unit and city, and sunk or neutralized every blue transporter.";
   victoryOverlay.classList.add("show");
   victoryOverlay.setAttribute("aria-hidden", "false");
   launchVictoryStars();
@@ -866,56 +1070,124 @@ async function performVisibleMove(army, target) {
     playCityCaptureSound();
     window.setTimeout(playCaptureFanfare, 260);
   }
+  if (result.fuel?.crashed) {
+    const crash = result.fuel.crash || target;
+    showCrashExplosion(crash.x, crash.y);
+    playCrashExplosionSound();
+  }
   isAnimating = false;
   return result;
 }
 
-function allHumanArmiesActed() {
-  return armiesFor("human").every((army) => army.acted || legalMoves(army).length === 0);
+function readyArmiesFor(owner) {
+  if (!["human", "ai"].includes(state.phase) || state.gameOver) return [];
+  const ready = armiesFor(owner).filter((army) => !army.acted && legalMoves(army).length > 0);
+  if (owner !== activePlayerOwner() || !state.skippedArmyIds?.length) return ready;
+
+  const skippedIds = new Set(state.skippedArmyIds);
+  const unskipped = ready.filter((army) => !skippedIds.has(army.id));
+  if (unskipped.length) return unskipped;
+
+  state.skippedArmyIds = [];
+  return ready;
 }
 
-function readyHumanArmies() {
-  if (state.phase !== "human" || state.gameOver) return [];
-  return armiesFor("human").filter((army) => !army.acted && legalMoves(army).length > 0);
+function allActiveArmiesActed() {
+  const owner = activePlayerOwner();
+  return armiesFor(owner).every((army) => army.acted || legalMoves(army).length === 0);
 }
 
-function activateNextHumanArmy() {
-  if (state.phase !== "human" || state.gameOver) {
+function readyActiveArmies() {
+  return readyArmiesFor(activePlayerOwner());
+}
+
+function activateNextArmy() {
+  if (!["human", "ai"].includes(state.phase) || state.gameOver) {
     selectedArmyId = null;
     return null;
   }
 
+  const owner = activePlayerOwner();
   const selectedArmy = state.armies.find((army) => army.id === selectedArmyId);
-  if (selectedArmy?.owner === "human" && !selectedArmy.acted && legalMoves(selectedArmy).length > 0) {
+  if (selectedArmy?.owner === owner && !selectedArmy.acted && legalMoves(selectedArmy).length > 0) {
     return selectedArmy;
   }
 
-  const nextArmy = readyHumanArmies()[0] || null;
+  const nextArmy = readyActiveArmies()[0] || null;
   selectedArmyId = nextArmy?.id || null;
   return nextArmy;
 }
 
 function beginAiTurn() {
   selectedArmyId = null;
+  state.skippedArmyIds = [];
   state.phase = "ai";
-  state.log = "AI turn. The opponent is moving each unit once.";
+  if (state.humanVsHuman) {
+    state.log = "Red player turn. Move the flashing unit.";
+    render();
+    return;
+  }
+  state.log = "Red AI turn. Red is moving each unit once.";
   const turnToken = gameToken;
   render();
-  aiTurnTimer = setTimeout(() => runAiTurn(turnToken), 220);
+  aiTurnTimer = setTimeout(() => runAiTurn("ai", turnToken), 220);
 }
 
-function endHumanTurn() {
-  if (trainingRunning || demoRunning || isAnimating || state.gameOver || state.phase !== "human") return;
-  armiesFor("human").forEach((army) => {
-    army.acted = true;
-  });
-  state.log = "You skipped the rest of your army moves.";
-  beginAiTurn();
+function beginHumanAiTurn() {
+  selectedArmyId = null;
+  state.skippedArmyIds = [];
+  state.phase = "human";
+  state.log = "Blue AI turn. Blue is moving each unit once.";
+  const turnToken = gameToken;
+  render();
+  aiTurnTimer = setTimeout(() => runAiTurn("human", turnToken), 220);
+}
+
+function skipActiveUnit() {
+  if (trainingRunning || demoRunning || isAnimating || state.gameOver || !["human", "ai"].includes(state.phase)) return;
+  if (!state.humanVsHuman) return;
+  const owner = activePlayerOwner();
+  const activeArmy = activateNextArmy();
+  if (!activeArmy) return;
+
+  const ready = readyActiveArmies();
+  if (ready.length <= 1) {
+    state.skippedArmyIds = [];
+    state.log = `${sideName(owner)} has no other ready unit. This unit still has the turn.`;
+    render();
+    return;
+  }
+
+  state.skippedArmyIds = (state.skippedArmyIds || []).filter((id) => id !== activeArmy.id);
+  state.skippedArmyIds.push(activeArmy.id);
+  selectedArmyId = null;
+  const nextArmy = activateNextArmy();
+  state.log = `${sideName(owner)} skipped ${unitLabel(activeArmy)} for now. ${unitLabel(nextArmy)} is active.`;
+  render();
 }
 
 function nearestDistance(items, point, fallback = 12) {
   if (!items.length) return fallback;
   return Math.min(...items.map((item) => distance(point, item)));
+}
+
+function loadedTransportAdvance(army, move, targets) {
+  if (army.type !== "transport" || !army.cargo?.length) return 0;
+  const currentNearestTarget = nearestDistance(targets, army);
+  const nearestTarget = nearestDistance(targets, move);
+  const advance = Math.max(0, currentNearestTarget - nearestTarget) / unitMoveRange(army);
+  const landingPressure = nearestTarget <= 2 ? (3 - nearestTarget) / 3 : 0;
+  return Math.max(advance, landingPressure);
+}
+
+function unloadNearTargets(army, move, targets, currentState) {
+  if (!canUnloadTransport(army, move, currentState)) return 0;
+  const nearestCity = nearestDistance(targets, move);
+  return nearestCity <= 5 ? (6 - nearestCity) / 6 : 0.2;
+}
+
+function isLandCombatUnit(unit) {
+  return unit.type === "infantry" || unit.type === "tank";
 }
 
 function scoreMove(army, move, currentState, learningBrain) {
@@ -925,25 +1197,42 @@ function scoreMove(army, move, currentState, learningBrain) {
     (unit) => unit.x === move.x && unit.y === move.y && canBoardTransport(army, unit),
   );
   const enemyCities = currentState.cities.filter((item) => item.owner !== army.owner);
+  const neutralCities = currentState.cities.filter((item) => item.owner === "neutral");
   const enemyArmies = currentState.armies.filter((unit) => unit.owner !== army.owner);
   const enemyTransports = enemyArmies.filter((unit) => unit.type === "transport");
   const ownCities = currentState.cities.filter((item) => item.owner === army.owner);
   const currentNearestCity = nearestDistance(enemyCities, army);
   const nearestCity = nearestDistance(enemyCities, move);
+  const currentNearestNeutralCity = nearestDistance(neutralCities, army);
+  const nearestNeutralCity = nearestDistance(neutralCities, move);
   const nearestEnemy = nearestDistance(enemyArmies, move);
   const nearestTransport = nearestDistance(enemyTransports, move);
   const nearestOwnCity = nearestDistance(ownCities, move);
   const cityAdvance = Math.max(0, currentNearestCity - nearestCity) / unitMoveRange(army);
+  const neutralCityAdvance = Math.max(0, currentNearestNeutralCity - nearestNeutralCity) / unitMoveRange(army);
   const cityPressure = nearestCity <= 3 ? (4 - nearestCity) / 4 : 0;
+  const neutralCityPressure = nearestNeutralCity <= 4 ? (5 - nearestNeutralCity) / 5 : 0;
+  const landUnit = isLandCombatUnit(army);
 
   const features = {
     captureCity: city && city.owner !== army.owner && !isFighter(army) ? 1 : 0,
+    captureNeutralCity: city?.owner === "neutral" && !isFighter(army) ? 1 : 0,
+    landCaptureNeutralCity: city?.owner === "neutral" && landUnit ? 1 : 0,
     attackEnemy: enemy ? 1 : 0,
     attackTransport: isFighter(army) && enemy?.type === "transport" ? 1 : 0,
     boardTransport: friendlyTransport ? 1 : 0,
+    boardForNeutralExpansion: friendlyTransport && neutralCities.length ? 1 : 0,
     unloadTransport: canUnloadTransport(army, move, currentState) ? 1 : 0,
+    loadedTransportAdvance: loadedTransportAdvance(army, move, enemyCities),
+    loadedTransportNeutralAdvance: loadedTransportAdvance(army, move, neutralCities),
+    unloadNearCity: unloadNearTargets(army, move, enemyCities, currentState),
+    unloadNearNeutralCity: unloadNearTargets(army, move, neutralCities, currentState),
     moveToCity: (12 - nearestCity) / 12,
     cityAdvance,
+    neutralCityAdvance,
+    neutralCityPressure,
+    landNeutralCityAdvance: landUnit ? neutralCityAdvance : 0,
+    landNeutralCityPressure: landUnit ? neutralCityPressure : 0,
     cityPressure,
     moveToEnemy: (12 - nearestEnemy) / 12,
     moveToTransport: isFighter(army) ? (12 - nearestTransport) / 12 : 0,
@@ -967,10 +1256,20 @@ function chooseAiMove(army, currentState = state, learningBrain = brain) {
   return Math.random() < 0.13 ? ranked[rand(ranked.length)] : ranked[0];
 }
 
-async function runAiTurn(turnToken = gameToken) {
+function rememberAiChoice(owner, features) {
+  if (owner === "ai") {
+    state.aiMemory.push(features);
+  } else if (features.captureCity) {
+    state.aiMemory.push({ captureCity: 0.25 });
+  }
+}
+
+async function runAiTurn(owner = "ai", turnToken = gameToken) {
   aiTurnTimer = null;
   if (turnToken !== gameToken || state.gameOver) return;
-  const aiUnits = [...armiesFor("ai")];
+  const aiUnits = [...armiesFor(owner)];
+  const enemyOwner = opponentOwner(owner);
+  const actorName = `${sideName(owner)} AI`;
   let captures = 0;
   let kills = 0;
 
@@ -979,21 +1278,30 @@ async function runAiTurn(turnToken = gameToken) {
     if (!state.armies.includes(army)) continue;
     const choice = chooseAiMove(army);
     if (!choice) continue;
-    const beforeEnemyCount = armiesFor("human").length;
+    selectedArmyId = army.id;
+    state.log = `${actorName} moves ${unitLabelWithArticle(army)}.`;
+    render();
+    const beforeEnemyCount = armiesFor(enemyOwner).length;
     const result = await performVisibleMove(army, choice.move, turnToken);
     if (result.cancelled) return;
     if (result.captured) captures += 1;
-    if (armiesFor("human").length < beforeEnemyCount) kills += 1;
-    state.aiMemory.push(choice.features);
+    if (armiesFor(enemyOwner).length < beforeEnemyCount) kills += 1;
+    rememberAiChoice(owner, choice.features);
+    checkVictory();
     render();
+    if (state.gameOver) return;
     await wait(110);
   }
 
-  state.log = `AI moved. It captured ${captures} cit${captures === 1 ? "y" : "ies"} and destroyed ${kills} unit${kills === 1 ? "" : "s"}.`;
-  finishRound();
+  state.log = `${actorName} moved. It captured ${captures} cit${captures === 1 ? "y" : "ies"} and destroyed ${kills} unit${
+    kills === 1 ? "" : "s"
+  }.`;
+  if (owner === "human") beginAiTurn();
+  else finishRound();
 }
 
 function finishRound() {
+  state.skippedArmyIds = [];
   produceArmies();
   armiesFor("human").forEach((army) => {
     army.acted = false;
@@ -1004,11 +1312,15 @@ function finishRound() {
   state.round += 1;
   state.phase = "human";
   checkVictory();
-  if (!state.gameOver && allHumanArmiesActed()) {
+  if (!state.gameOver && !state.humanVsHuman) {
+    beginHumanAiTurn();
+    return;
+  }
+  if (!state.gameOver && allActiveArmiesActed()) {
     beginAiTurn();
     return;
   }
-  activateNextHumanArmy();
+  activateNextArmy();
   render();
 }
 
@@ -1017,11 +1329,11 @@ function produceArmies() {
     if (city.owner === "neutral") continue;
     city.produce -= 1;
     if (city.produce > 0) continue;
-    city.produce = PRODUCTION_ROUNDS;
     if (!armyAt(city.x, city.y)) {
       state.armies.push(makeUnit(city.owner, city.x, city.y, city.nextUnitType || "infantry"));
-      if (city.owner === "ai") city.nextUnitType = chooseAiProductionType();
+      city.nextUnitType = chooseProductionType(city.owner);
     }
+    city.produce = unitProductionTurns(city.nextUnitType || "infantry");
   }
 }
 
@@ -1047,21 +1359,29 @@ function learnFromGame(aiWon, options = {}) {
 
 function checkVictory() {
   if (state.gameOver) return;
-  const humanUnits = armiesFor("human");
-  const aiUnits = armiesFor("ai");
-  const humanWon = aiUnits.length === 0 && citiesFor("ai").length === 0 && transportersFor("ai").length === 0;
-  const aiWon = humanUnits.length === 0 && citiesFor("human").length === 0 && transportersFor("human").length === 0;
+  const humanUnits = activeUnitsFor("human");
+  const aiUnits = activeUnitsFor("ai");
+  const humanWon = aiUnits.length === 0 && citiesFor("ai").length === 0;
+  const aiWon = humanUnits.length === 0 && citiesFor("human").length === 0;
 
   if (humanWon) {
     state.gameOver = true;
     state.winner = "human";
-    state.log = "You win. Red has no units, cities, or transporter ships left.";
-    learnFromGame(false, { recordResult: state.recordResults !== false });
+    state.log = "You win. Red has no units, cities, or usable transporter ships left.";
+    if (state.humanVsHuman) {
+      state.log = "Blue wins. Red has no units, cities, or usable transporter ships left.";
+    } else {
+      learnFromGame(false, { recordResult: state.recordResults !== false });
+    }
   } else if (aiWon) {
     state.gameOver = true;
     state.winner = "ai";
-    state.log = "AI wins. Blue has no units, cities, or transporter ships left.";
-    learnFromGame(true, { recordResult: state.recordResults !== false });
+    state.log = `${state.humanVsHuman ? "Red wins" : "AI wins"}. Blue has no units, cities, or usable transporter ships left.`;
+    if (state.humanVsHuman) {
+      state.log = "Red wins. Blue has no units, cities, or usable transporter ships left.";
+    } else {
+      learnFromGame(true, { recordResult: state.recordResults !== false });
+    }
   }
 
   if (state.gameOver && !state.victoryAnnounced && !state.silent) {
@@ -1081,10 +1401,12 @@ function selectedProductionCity() {
 }
 
 function showProductionModal(city) {
-  if (!city || city.owner !== "human") return;
+  if (!city || city.owner !== activePlayerOwner()) return;
   productionCityId = city.id;
   productionTitle.textContent = "What unit city is going to produce?";
-  productionCityText.textContent = `This blue city will produce ${unitLabel({ type: city.nextUnitType || "infantry" })} in ${city.produce} turn${city.produce === 1 ? "" : "s"}.`;
+  productionCityText.textContent = `This ${sideName(city.owner).toLowerCase()} city will produce ${unitLabel({
+    type: city.nextUnitType || "infantry",
+  })} in ${city.produce} turn${city.produce === 1 ? "" : "s"}.`;
   productionOptions.innerHTML = Object.entries(UNIT_TYPES)
     .map(([type, unit]) => {
       const selected = type === (city.nextUnitType || "infantry") ? " selected" : "";
@@ -1104,12 +1426,25 @@ function hideProductionModal(options = {}) {
 }
 
 function continueHumanTurnAfterProductionChoice() {
-  if (state.gameOver || state.phase !== "human") return;
-  if (allHumanArmiesActed()) {
+  if (state.gameOver || !["human", "ai"].includes(state.phase)) return;
+  if (allActiveArmiesActed()) {
+    if (state.humanVsHuman && state.phase === "ai") finishRound();
+    else beginAiTurn();
+    return;
+  }
+  activateNextArmy();
+  render();
+}
+
+function finishActiveTurnAfterMove() {
+  if (state.humanVsHuman && state.phase === "ai") {
+    finishRound();
+    return;
+  }
+  if (state.phase === "human") {
     beginAiTurn();
     return;
   }
-  activateNextHumanArmy();
   render();
 }
 
@@ -1120,6 +1455,7 @@ function chooseHumanProduction(type) {
     return;
   }
   city.nextUnitType = type;
+  city.produce = unitProductionTurns(type);
   state.log = `City will produce ${unitLabel({ type })}.`;
   hideProductionModal({ continueTurn: true });
 }
@@ -1130,35 +1466,37 @@ async function handleCellClick(x, y) {
     demoRunning ||
     isAnimating ||
     state.gameOver ||
-    state.phase !== "human" ||
+    !["human", "ai"].includes(state.phase) ||
+    !state.humanVsHuman ||
     productionModal.classList.contains("show")
   ) {
     return;
   }
   unlockAudio();
+  const currentOwner = activePlayerOwner();
   const clickedArmy = armyAt(x, y);
   const clickedCity = cityAt(x, y);
+  const activeArmy = activateNextArmy();
+  const activeCanMoveToClicked =
+    activeArmy &&
+    (activeArmy.x !== x || activeArmy.y !== y) &&
+    legalMoves(activeArmy).some((move) => move.x === x && move.y === y);
 
-  if (clickedCity?.owner === "human") {
-    const activeArmy = activateNextHumanArmy();
-    const isMoveTarget =
-      activeArmy &&
-      (activeArmy.x !== x || activeArmy.y !== y) &&
-      legalMoves(activeArmy).some((move) => move.x === x && move.y === y);
-    if (!isMoveTarget) {
+  if (clickedCity?.owner === currentOwner) {
+    if (!activeCanMoveToClicked) {
       showProductionModal(clickedCity);
       return;
     }
   }
 
-  if (clickedArmy?.owner === "human" && !clickedArmy.acted) {
+  if (clickedArmy?.owner === currentOwner && clickedArmy.id !== activeArmy?.id && !activeCanMoveToClicked && !clickedArmy.acted) {
     selectedArmyId = clickedArmy.id;
-    state.log = "Move the flashing unit to a highlighted square, city, or enemy.";
+    state.log = `${sideName(currentOwner)}: move the flashing unit to a highlighted square, city, or enemy.`;
     render();
     return;
   }
 
-  const army = activateNextHumanArmy();
+  const army = activeArmy;
   if (!army || army.acted) return;
   const legal = legalMoves(army).some((move) => move.x === x && move.y === y);
   if (!legal) {
@@ -1175,49 +1513,51 @@ async function handleCellClick(x, y) {
   selectedArmyId = null;
   const capturedCity = result.captured ? cityAt(army.x, army.y) : null;
   if (result.fuel?.crashed) state.log = "Fighter ran out of fuel and crashed.";
-  else if (result.battle?.loser.owner === "ai") state.log = "Your unit won the battle.";
-  else if (result.battle?.loser.owner === "human") state.log = "Your unit was destroyed in battle.";
-  else if (result.captured) state.log = "You captured a city. Choose what it will produce.";
+  else if (result.battle?.loser.owner === opponentOwner(currentOwner)) state.log = `${sideName(currentOwner)} unit won the battle.`;
+  else if (result.battle?.loser.owner === currentOwner) state.log = `${sideName(currentOwner)} unit was destroyed in battle.`;
+  else if (result.captured) state.log = `${sideName(currentOwner)} captured a city. Choose what it will produce.`;
   else if (result.boarded) state.log = `Unit boarded a transporter. Cargo ${transportCargoUsed(result.transport)} / ${TRANSPORT_CAPACITY}.`;
   else if (result.unloaded) state.log = `Transporter unloaded ${unitLabel(result.unit)}.`;
   else if (result.fuel?.refueled && army.type === "fighter") state.log = "Fighter returned to a friendly city and refueled.";
   else state.log = "Unit moved.";
 
   checkVictory();
-  if (!state.gameOver && capturedCity?.owner === "human") {
-    activateNextHumanArmy();
+  if (!state.gameOver && capturedCity?.owner === currentOwner) {
+    activateNextArmy();
     render();
     showProductionModal(capturedCity);
     return;
   }
-  if (!state.gameOver && allHumanArmiesActed()) {
-    beginAiTurn();
+  if (!state.gameOver && allActiveArmiesActed()) {
+    finishActiveTurnAfterMove();
   } else {
-    activateNextHumanArmy();
+    activateNextArmy();
     render();
   }
 }
 
 function render() {
-  const activeArmy = demoRunning ? state.armies.find((army) => army.id === selectedArmyId) : activateNextHumanArmy();
+  const activeArmy = demoRunning ? state.armies.find((army) => army.id === selectedArmyId) : activateNextArmy();
   roundCount.textContent = state.round;
   humanCities.textContent = citiesFor("human").length;
   aiCities.textContent = citiesFor("ai").length;
   aiLessons.textContent = brain.lessons;
-  const readyCount = readyHumanArmies().length;
+  const readyCount = readyActiveArmies().length;
   const humanPrompt = state.log.includes("flashing unit") ? state.log : `${state.log} Move the flashing unit.`;
   statusText.textContent =
     demoRunning
       ? state.log
       : state.log.startsWith("Training complete")
       ? state.log
-      : state.phase === "human" && !state.gameOver && readyCount > 0
-      ? `${humanPrompt} ${readyCount} unit${readyCount === 1 ? " is" : "s are"} ready.`
+      : !state.humanVsHuman
+      ? state.log
+      : ["human", "ai"].includes(state.phase) && !state.gameOver && readyCount > 0
+      ? `${sideName(activePlayerOwner())}: ${humanPrompt} ${readyCount} unit${readyCount === 1 ? " is" : "s are"} ready.`
       : state.log;
   renderBrain();
 
   const selectedArmy = activeArmy;
-  const readyArmyIds = new Set(readyHumanArmies().map((army) => army.id));
+  const readyArmyIds = new Set(readyActiveArmies().map((army) => army.id));
   const moveKeys = new Set(selectedArmy ? legalMoves(selectedArmy).map((move) => key(move.x, move.y)) : []);
 
   boardEl.innerHTML = "";
@@ -1236,7 +1576,8 @@ function render() {
         cell.classList.add("city");
         if (city.owner === "human") cell.classList.add("human-city");
         if (city.owner === "ai") cell.classList.add("ai-city");
-        cell.title = `${city.owner} city, producing ${unitLabel({ type: city.nextUnitType || "infantry" })} in ${city.produce}`;
+        cell.title = cityProductionText(city);
+        cell.ariaLabel = `${cell.ariaLabel}, ${cityProductionText(city)}`;
       }
 
       const army = armyAt(x, y);
@@ -1258,17 +1599,19 @@ function render() {
           cargoCount ? `<span class="army-cargo">${cargoCount}</span>` : ""
         }${fuelText !== null ? `<span class="army-fuel">${fuelText}</span>` : ""}`;
         cell.append(marker);
-        cell.title =
+        const armyTitle =
           army.type === "transport"
             ? `${army.owner} ${unitLabel(army)}, ${army.hp} HP, cargo ${transportCargoUsed(army)} / ${TRANSPORT_CAPACITY}`
             : army.type === "fighter"
             ? `${army.owner} ${unitLabel(army)}, ${army.hp} HP, fuel ${army.fuel ?? FIGHTER_FUEL} / ${FIGHTER_FUEL}`
             : `${army.owner} ${unitLabel(army)}, ${army.hp} HP`;
+        cell.title = city ? `${cityProductionText(city)}\n${armyTitle}` : armyTitle;
+        cell.ariaLabel = `${cell.ariaLabel}, ${armyTitle}`;
       }
 
       if (selectedArmy?.x === x && selectedArmy?.y === y) cell.classList.add("selected");
       if (moveKeys.has(key(x, y))) {
-        cell.classList.add(armyAt(x, y)?.owner === "ai" ? "attack-target" : "move-target");
+        cell.classList.add(armyAt(x, y)?.owner && armyAt(x, y)?.owner !== selectedArmy?.owner ? "attack-target" : "move-target");
       }
 
       cell.addEventListener("click", () => handleCellClick(x, y));
@@ -1279,10 +1622,10 @@ function render() {
 
 function renderBrain() {
   const rows = [
-    ["Blue wins", brain.records.human.wins],
-    ["Blue losses", brain.records.human.losses],
-    ["Red wins", brain.records.ai.wins],
-    ["Red losses", brain.records.ai.losses],
+    ["AI wins", brain.records.ai.wins],
+    ["AI losses", brain.records.ai.losses],
+    ["Human wins", brain.records.human.wins],
+    ["Human losses", brain.records.human.losses],
   ];
   brainStats.innerHTML = rows.map(([name, value]) => `<dt>${name}</dt><dd>${value}</dd>`).join("");
 }
@@ -1340,14 +1683,10 @@ function runHiddenTrainingGame() {
     for (const owner of ["human", "ai"]) {
       for (const army of [...armiesFor(owner)]) {
         if (!state.armies.includes(army)) continue;
-        const choice =
-          owner === "ai"
-            ? chooseAiMove(army, state, brain)
-            : { move: shuffle(legalMoves(army))[0], features: {} };
+        const choice = chooseAiMove(army, state, brain);
         if (choice?.move) {
-          const result = moveArmy(army, choice.move);
-          if (owner === "ai") state.aiMemory.push(choice.features);
-          if (result.captured && owner === "human") state.aiMemory.push({ captureCity: 0.25 });
+          moveArmy(army, choice.move);
+          rememberAiChoice(owner, choice.features);
         }
       }
     }
@@ -1365,6 +1704,7 @@ function runHiddenTrainingGame() {
 
 function setTrainingControlsEnabled(enabled) {
   endTurnBtn.disabled = !enabled;
+  humanVsHumanBtn.disabled = !enabled;
   trainBtn.disabled = !enabled;
   trainCountInput.disabled = !enabled;
   resetBrainBtn.disabled = !enabled;
@@ -1422,6 +1762,7 @@ function demoTempoMs() {
 
 function setDemoControlsEnabled(enabled) {
   endTurnBtn.disabled = !enabled;
+  humanVsHumanBtn.disabled = !enabled;
   trainBtn.disabled = !enabled;
   resetBrainBtn.disabled = !enabled;
   demoAiBtn.disabled = !enabled;
@@ -1469,15 +1810,14 @@ async function runDemoSide(owner, delayMs, demoToken) {
     }
 
     selectedArmyId = army.id;
-    state.log = `${sideName} moves a ${unitLabel(army)}.`;
+    state.log = `${sideName} moves ${unitLabelWithArticle(army)}.`;
     render();
     await wait(delayMs);
 
     const beforeEnemyCount = armiesFor(owner === "human" ? "ai" : "human").length;
     const result = await performVisibleMove(army, choice.move, demoToken);
     if (result.cancelled) return false;
-    if (owner === "ai") state.aiMemory.push(choice.features);
-    if (result.captured && owner === "human") state.aiMemory.push({ captureCity: 0.25 });
+    rememberAiChoice(owner, choice.features);
     if (armiesFor(owner === "human" ? "ai" : "human").length < beforeEnemyCount) {
       state.log = `${sideName} destroyed an enemy unit.`;
     } else if (result.captured) {
@@ -1498,6 +1838,7 @@ async function runDemoAiGame() {
   unlockAudio();
   const delayMs = demoTempoMs();
   demoRunning = true;
+  humanVsHuman = false;
   setDemoControlsEnabled(false);
   newGame({ demo: true, keepDemoRunning: true });
   const demoToken = gameToken;
@@ -1554,7 +1895,7 @@ boardEl.addEventListener("pointerdown", () => {
 });
 endTurnBtn.addEventListener("click", () => {
   unlockAudio();
-  endHumanTurn();
+  skipActiveUnit();
 });
 document.addEventListener("keydown", (event) => {
   if (event.code === "Escape" && productionModal.classList.contains("show")) {
@@ -1570,11 +1911,15 @@ document.addEventListener("keydown", (event) => {
   if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
   event.preventDefault();
   unlockAudio();
-  endHumanTurn();
+  skipActiveUnit();
 });
 trainBtn.addEventListener("click", () => {
   if (demoRunning || trainingRunning) return;
   trainGames(trainingGameCount());
+});
+humanVsHumanBtn.addEventListener("click", () => {
+  if (demoRunning || trainingRunning) return;
+  startHumanVsHumanGame();
 });
 resetBrainBtn.addEventListener("click", () => {
   if (demoRunning || trainingRunning) return;
@@ -1600,4 +1945,6 @@ productionOptions.addEventListener("click", (event) => {
 });
 demoAiBtn.addEventListener("click", runDemoAiGame);
 
-newGame();
+loadUnitTypes().finally(() => {
+  newGame();
+});
