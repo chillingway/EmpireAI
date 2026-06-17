@@ -9,6 +9,7 @@ EmpireAI is a first playable turn-based strategy prototype built around a 15 x 1
 - There are 10 cities.
 - Cities produce one new army every 5 game turns for their current owner.
 - A city is conquered when an army moves onto it.
+- Fighter planes cannot conquer cities, but returning to a friendly city reduces that city's production time by the fighter's hit power.
 - Human and AI armies can move one square north, north-east, east, south-east, south, south-west, west, or north-west.
 - Armies have 5 hitpoints.
 - If an army moves onto an enemy army, they fight. Random hits continue until one army reaches 0 hitpoints and is destroyed.

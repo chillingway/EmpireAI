@@ -176,6 +176,7 @@ function defaultBrain() {
       cityPressure: 1.5,
       moveToEnemy: 0.65,
       moveToTransport: 2.8,
+      boostProduction: 1.4,
       protectCity: 0.35,
       stayAlive: 0.8,
     },
@@ -671,6 +672,37 @@ function captureCity(army) {
   return false;
 }
 
+function productionSpawnCell(city, type) {
+  if (!armyAt(city.x, city.y)) return city;
+  const prototype = { type };
+  const candidates = shuffle(directions)
+    .map((dir) => ({ x: city.x + dir.dx, y: city.y + dir.dy }))
+    .filter((cell) => inBounds(cell.x, cell.y) && !armyAt(cell.x, cell.y));
+  return candidates.find((cell) => canEnterTerrain(prototype, state.terrain[cell.y][cell.x])) || null;
+}
+
+function produceCityUnit(city) {
+  const type = city.nextUnitType || "infantry";
+  const spawn = productionSpawnCell(city, type);
+  if (!spawn) return { produced: false, type, spawn: null };
+  state.armies.push(makeUnit(city.owner, spawn.x, spawn.y, type));
+  city.nextUnitType = chooseProductionType(city.owner);
+  city.produce = unitProductionTurns(city.nextUnitType || "infantry");
+  return { produced: true, type, spawn };
+}
+
+function boostCityProduction(unit) {
+  if (!isFighter(unit)) return null;
+  const city = cityAt(unit.x, unit.y);
+  if (!city || city.owner !== unit.owner || city.produce <= 0) return null;
+  const before = city.produce;
+  const amount = Math.min(before, unitStrikePower(unit));
+  city.produce -= amount;
+  const completed = city.produce <= 0 ? produceCityUnit(city) : null;
+  if (completed && !completed.produced) city.produce = 1;
+  return { city, amount, before, completed };
+}
+
 function serviceFighter(unit, fuelCost) {
   if (!isFighter(unit)) return { crashed: false, refueled: false };
   const city = cityAt(unit.x, unit.y);
@@ -713,8 +745,9 @@ function moveArmy(army, target) {
   army.y = target.y;
   army.acted = true;
   const captured = captureCity(army);
+  const productionBoost = boostCityProduction(army);
   const fuel = serviceFighter(army, fuelCost);
-  return { moved: true, captured, battle, fuel };
+  return { moved: true, captured, battle, fuel, productionBoost };
 }
 
 function getCellElement(x, y) {
@@ -1213,6 +1246,7 @@ function scoreMove(army, move, currentState, learningBrain) {
   const cityPressure = nearestCity <= 3 ? (4 - nearestCity) / 4 : 0;
   const neutralCityPressure = nearestNeutralCity <= 4 ? (5 - nearestNeutralCity) / 5 : 0;
   const landUnit = isLandCombatUnit(army);
+  const boostProduction = isFighter(army) && city?.owner === army.owner ? Math.min(city.produce, unitStrikePower(army)) / unitStrikePower(army) : 0;
 
   const features = {
     captureCity: city && city.owner !== army.owner && !isFighter(army) ? 1 : 0,
@@ -1236,6 +1270,7 @@ function scoreMove(army, move, currentState, learningBrain) {
     cityPressure,
     moveToEnemy: (12 - nearestEnemy) / 12,
     moveToTransport: isFighter(army) ? (12 - nearestTransport) / 12 : 0,
+    boostProduction,
     protectCity: (12 - nearestOwnCity) / 12,
     stayAlive: army.hp / unitMaxHp(army),
   };
@@ -1329,11 +1364,10 @@ function produceArmies() {
     if (city.owner === "neutral") continue;
     city.produce -= 1;
     if (city.produce > 0) continue;
-    if (!armyAt(city.x, city.y)) {
-      state.armies.push(makeUnit(city.owner, city.x, city.y, city.nextUnitType || "infantry"));
-      city.nextUnitType = chooseProductionType(city.owner);
+    const result = produceCityUnit(city);
+    if (!result.produced) {
+      city.produce = 1;
     }
-    city.produce = unitProductionTurns(city.nextUnitType || "infantry");
   }
 }
 
@@ -1518,6 +1552,14 @@ async function handleCellClick(x, y) {
   else if (result.captured) state.log = `${sideName(currentOwner)} captured a city. Choose what it will produce.`;
   else if (result.boarded) state.log = `Unit boarded a transporter. Cargo ${transportCargoUsed(result.transport)} / ${TRANSPORT_CAPACITY}.`;
   else if (result.unloaded) state.log = `Transporter unloaded ${unitLabel(result.unit)}.`;
+  else if (result.productionBoost?.completed?.produced)
+    state.log = `Fighter sped up city production by ${result.productionBoost.amount} and produced ${unitLabel({
+      type: result.productionBoost.completed.type,
+    })}.`;
+  else if (result.productionBoost)
+    state.log = `Fighter sped up city production by ${result.productionBoost.amount} turn${
+      result.productionBoost.amount === 1 ? "" : "s"
+    }.`;
   else if (result.fuel?.refueled && army.type === "fighter") state.log = "Fighter returned to a friendly city and refueled.";
   else state.log = "Unit moved.";
 
