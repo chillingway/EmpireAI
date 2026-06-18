@@ -403,6 +403,24 @@ h2 {
   height: 16%;
 }
 
+.army.destroyer {
+  width: 88%;
+  height: 56%;
+  border-radius: 48% 48% 9px 9px;
+}
+
+.army.destroyer::before {
+  inset: 23% 17% 41%;
+  border-radius: 3px 3px 1px 1px;
+}
+
+.army.destroyer::after {
+  left: 6%;
+  right: 6%;
+  bottom: 10%;
+  height: 16%;
+}
+
 .army.fighter {
   width: 78%;
   height: 70%;
@@ -462,6 +480,38 @@ h2 {
   height: 26%;
   border-radius: 0 0 99px 99px;
   clip-path: polygon(0 0, 100% 0, 84% 100%, 14% 100%);
+}
+
+.army.destroyer .army-symbol {
+  left: 13%;
+  top: 26%;
+  width: 74%;
+  height: 30%;
+  border-radius: 0 0 99px 99px;
+  clip-path: polygon(0 28%, 72% 28%, 86% 0, 100% 52%, 88% 100%, 12% 100%);
+}
+
+.army.destroyer .army-symbol::before,
+.army.destroyer .army-symbol::after {
+  content: "";
+  position: absolute;
+  background: #ffffff;
+}
+
+.army.destroyer .army-symbol::before {
+  left: 34%;
+  top: -58%;
+  width: 24%;
+  height: 52%;
+  border-radius: 2px 2px 0 0;
+}
+
+.army.destroyer .army-symbol::after {
+  right: -23%;
+  top: 4%;
+  width: 36%;
+  height: 16%;
+  border-radius: 99px;
 }
 
 .army.fighter .army-symbol {
@@ -568,6 +618,24 @@ h2 {
   transform: translate(-50%, -50%) scale(0.2) rotate(0deg);
   animation: crashExplosion 720ms ease-out forwards;
   mix-blend-mode: screen;
+}
+
+.production-burst {
+  position: fixed;
+  z-index: 34;
+  pointer-events: none;
+  min-width: 82px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #fff7c2;
+  color: #1f2933;
+  border: 2px solid rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.26), 0 10px 20px rgba(15, 23, 42, 0.28);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-align: center;
+  transform: translate(-50%, -50%) scale(0.72);
+  animation: productionBurst 1100ms ease-out forwards;
 }
 
 .cell.selected {
@@ -686,6 +754,8 @@ h2 {
 .rules-dialog {
   position: relative;
   width: min(500px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
   display: grid;
   gap: 10px;
   padding: 20px;
@@ -725,7 +795,7 @@ h2 {
 }
 
 .production-option span {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.25;
 }
@@ -792,6 +862,28 @@ h2 {
     opacity: 0;
     transform: translate(-50%, -50%) scale(1.75) rotate(120deg);
     filter: brightness(0.72) saturate(0.65);
+  }
+}
+
+@keyframes productionBurst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -35%) scale(0.7);
+  }
+
+  16% {
+    opacity: 1;
+    transform: translate(-50%, -78%) scale(1.05);
+  }
+
+  62% {
+    opacity: 1;
+    transform: translate(-50%, -104%) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -140%) scale(0.92);
   }
 }
 

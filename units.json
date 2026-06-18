@@ -28,12 +28,22 @@
   },
   "fighter": {
     "label": "fighter plane",
-    "hitpoints": 1,
+    "hitpoints": 2,
     "speed": 6,
     "productionTurns": 6,
     "hitPower": 3,
     "terrain": "air",
     "fuel": 15,
+    "produceWeight": 10
+  },
+  "destroyer": {
+    "label": "Destroyer",
+    "hitpoints": 4,
+    "speed": 4,
+    "productionTurns": 12,
+    "hitPower": 3,
+    "terrain": "sea",
+    "fuel": 100,
     "produceWeight": 10
   }
 }

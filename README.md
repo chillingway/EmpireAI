@@ -1,20 +1,22 @@
 # EmpireAI
 
-EmpireAI is a first playable turn-based strategy prototype built around a 15 x 15 land-and-lake map.
+EmpireAI is a first playable turn-based strategy prototype built around a 20 x 20 island-and-sea map.
 
 ## Rules
 
-- The world is a 15 x 15 board.
-- Land is always connected, while water behaves like lakes that armies cannot enter.
+- The world is a 20 x 20 board.
+- Land is split into independent connected islands, and land units cannot enter water.
 - There are 10 cities.
-- Cities produce one new army every 5 game turns for their current owner.
-- A city is conquered when an army moves onto it.
+- Cities produce armies, tanks, transporter ships, destroyers, and fighter planes for their current owner.
+- A city is conquered when a non-fighter unit enters it.
 - Fighter planes cannot conquer cities, but returning to a friendly city reduces that city's production time by the fighter's hit power.
-- Human and AI armies can move one square north, north-east, east, south-east, south, south-west, west, or north-west.
-- Armies have 5 hitpoints.
-- If an army moves onto an enemy army, they fight. Random hits continue until one army reaches 0 hitpoints and is destroyed.
-- A player wins by conquering all cities.
-- Press Space, or click **Space: Skip Rest**, to skip the rest of your army movements for the current round.
+- Destroyer ships move on water, have 4 hitpoints, move 8 squares, strike for 3, and take 12 turns to produce.
+- Units with fuel lose 1 fuel per square moved, refuel on the same square as their own city, and are destroyed when fuel reaches 0.
+- Transporter ships can carry armies and tanks. If a transporter is sunk, all cargo inside it is destroyed.
+- Armies and tanks can attack transporter ships and destroyers from land without entering the water, dealing their hit power as damage.
+- Enemy units on the same square fight randomly until one unit reaches 0 hitpoints and is destroyed.
+- A player wins when the opponent has no units, no owned cities, and no usable transporter ships.
+- Press Space, or click **Skip Turn**, to skip the current side's turn and let the opponent start.
 
 ## AI Learning
 
