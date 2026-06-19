@@ -35,6 +35,7 @@
     "productionTurns": 7,
     "hitPower": 1,
     "terrain": "water",
+    "fuel": 30,
     "produceWeight": 13
   },
   "fighter": {
