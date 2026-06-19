@@ -35,6 +35,7 @@ const roundCount = document.querySelector("#roundCount");
 const humanCities = document.querySelector("#humanCities");
 const aiCities = document.querySelector("#aiCities");
 const aiLessons = document.querySelector("#aiLessons");
+const versionBadge = document.querySelector("#versionBadge");
 const brainStats = document.querySelector("#brainStats");
 const trainProgress = document.querySelector("#trainProgress");
 const endTurnBtn = document.querySelector("#endTurnBtn");
@@ -74,6 +75,11 @@ let humanVsHuman = false;
 let livePlayPaused = false;
 let productionCityId = null;
 let cityClickTimer = null;
+
+if (versionBadge) {
+  versionBadge.textContent = `Version ${window.EMPIRE_AI_VERSION || "1.0"}`;
+  versionBadge.title = "Game version. Increase by 0.1 before each GitHub commit.";
+}
 
 function makeMap() {
   return window.EmpireMap.makeMap({ directions, inBounds, key, rand, shuffle, size: SIZE });
@@ -1639,7 +1645,7 @@ resetBrainBtn.addEventListener("click", () => {
   if (demoRunning || trainingRunning) return;
   unlockAudio();
   resetPersistentBrain();
-  state.log = "AI learning reset and permanent storage cleared.";
+  state.log = "AI learning reset to the bundled GitHub brain.";
   render();
 });
 rulesBtn.addEventListener("click", showRules);
@@ -1653,6 +1659,6 @@ productionModal.addEventListener("click", (event) => {
 });
 demoAiBtn.addEventListener("click", runDemoAiGame);
 
-loadUnitTypes().finally(() => {
+Promise.all([loadUnitTypes(), initializeBrain()]).finally(() => {
   newGame();
 });

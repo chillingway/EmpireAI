@@ -47,7 +47,9 @@
 
   function makeMap(options) {
     const { directions, inBounds, key, rand, shuffle, size } = options;
-    const helpers = { directions, inBounds, key, rand, shuffle, size };
+    const halfWidth = Math.floor(size / 2);
+    const leftInBounds = (x, y) => inBounds(x, y) && x < halfWidth;
+    const helpers = { directions, inBounds: leftInBounds, key, rand, shuffle, size };
     const terrain = Array.from({ length: size }, () => Array.from({ length: size }, () => "water"));
 
     carveIsland(
@@ -61,30 +63,25 @@
       34,
       helpers,
     );
-    carveIsland(
-      terrain,
-      [
-        { x: size - 2, y: size - 2 },
-        { x: size - 3, y: size - 2 },
-        { x: size - 2, y: size - 3 },
-        { x: size - 3, y: size - 3 },
-      ],
-      34,
-      helpers,
-    );
 
     const islandCount = 5 + rand(3);
     for (let i = 0; i < islandCount; i += 1) {
       let center = null;
       for (let attempt = 0; attempt < 80; attempt += 1) {
-        const candidate = { x: 3 + rand(size - 6), y: 3 + rand(size - 6) };
-        if (!hasNearbyLand(terrain, candidate, 3, inBounds)) {
+        const candidate = { x: 2 + rand(Math.max(1, halfWidth - 4)), y: 3 + rand(size - 6) };
+        if (!hasNearbyLand(terrain, candidate, 3, leftInBounds)) {
           center = candidate;
           break;
         }
       }
       if (!center) continue;
       carveIsland(terrain, [center], 16 + rand(13), helpers);
+    }
+
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < halfWidth; x += 1) {
+        terrain[y][size - 1 - x] = terrain[y][x];
+      }
     }
 
     return terrain;
@@ -102,23 +99,37 @@
 
   function placeCities(options) {
     const { cityCount, distance, farEnough, makeCity, minimumCityDistance, shuffle, size, terrain } = options;
-    const cities = [makeCity("c-human", 1, 1, "human"), makeCity("c-ai", size - 2, size - 2, "ai")];
+    const mirrorX = (x) => size - 1 - x;
+    const halfWidth = Math.floor(size / 2);
+    const humanStart = { x: 1, y: 1 };
+    const aiStart = { x: mirrorX(humanStart.x), y: humanStart.y };
+    const cities = [makeCity("c-human", humanStart.x, humanStart.y, "human"), makeCity("c-ai", aiStart.x, aiStart.y, "ai")];
 
-    const candidates = shuffle(landCells(terrain)).filter(
-      (cell) => distance(cell, cities[0]) > 2 && distance(cell, cities[1]) > 2,
+    const leftCandidates = shuffle(landCells(terrain)).filter(
+      (cell) =>
+        cell.x < halfWidth &&
+        distance(cell, cities[0]) > 2 &&
+        distance({ x: mirrorX(cell.x), y: cell.y }, cities[1]) > 2,
     );
 
-    for (const cell of candidates) {
-      if (cities.length >= cityCount) break;
-      if (farEnough(cell, cities, minimumCityDistance)) {
+    for (const cell of leftCandidates) {
+      if (cities.length + 1 >= cityCount) break;
+      const mirroredCell = { x: mirrorX(cell.x), y: cell.y };
+      if (farEnough(cell, cities, minimumCityDistance) && farEnough(mirroredCell, [...cities, cell], minimumCityDistance)) {
         cities.push(makeCity(`c-${cities.length}`, cell.x, cell.y, "neutral"));
+        cities.push(makeCity(`c-${cities.length}`, mirroredCell.x, mirroredCell.y, "neutral"));
       }
     }
 
-    for (const cell of candidates) {
-      if (cities.length >= cityCount) break;
-      if (!cities.some((city) => city.x === cell.x && city.y === cell.y)) {
+    for (const cell of leftCandidates) {
+      if (cities.length + 1 >= cityCount) break;
+      const mirroredCell = { x: mirrorX(cell.x), y: cell.y };
+      const pairOccupied = cities.some(
+        (city) => (city.x === cell.x && city.y === cell.y) || (city.x === mirroredCell.x && city.y === mirroredCell.y),
+      );
+      if (!pairOccupied) {
         cities.push(makeCity(`c-${cities.length}`, cell.x, cell.y, "neutral"));
+        cities.push(makeCity(`c-${cities.length}`, mirroredCell.x, mirroredCell.y, "neutral"));
       }
     }
 

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "empireAI.childBrain.v1";
+const BUNDLED_BRAIN_URL = "./ai-brain.json?v=v1-pretrained-brain-1";
 const SCOREBOARD_VERSION = 4;
 const BRAIN_STORAGE_VERSION = 1;
 
@@ -55,16 +56,28 @@ function defaultBrain() {
   };
 }
 
-function loadBrain() {
+function storedBrain() {
   try {
-    const storedBrain = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return normalizeBrain(storedBrain || defaultBrain());
+    const rawBrain = localStorage.getItem(STORAGE_KEY);
+    return rawBrain ? normalizeBrain(JSON.parse(rawBrain)) : null;
   } catch {
+    return null;
+  }
+}
+
+async function bundledBrain() {
+  try {
+    const response = await fetch(BUNDLED_BRAIN_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Bundled brain request failed: ${response.status}`);
+    return normalizeBrain(await response.json());
+  } catch (error) {
+    console.warn("Using fallback AI brain.", error);
     return defaultBrain();
   }
 }
 
-let brain = loadBrain();
+let pretrainedBrain = defaultBrain();
+let brain = defaultBrain();
 
 function normalizeBrain(savedBrain) {
   const freshBrain = defaultBrain();
@@ -113,8 +126,15 @@ function resetPersistentBrain() {
   } catch {
     // Reset still works in memory if browser storage is unavailable.
   }
-  brain = defaultBrain();
+  brain = normalizeBrain(pretrainedBrain);
   saveBrain();
+}
+
+async function initializeBrain() {
+  pretrainedBrain = await bundledBrain();
+  brain = storedBrain() || normalizeBrain(pretrainedBrain);
+  saveBrain();
+  return brain;
 }
 
 function savedBrainText() {
@@ -125,7 +145,6 @@ function savedBrainText() {
 }
 
 window.addEventListener("beforeunload", () => saveBrain());
-saveBrain();
 
 
 function chooseAiProductionType(owner = "ai") {
