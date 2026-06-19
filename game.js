@@ -1638,9 +1638,8 @@ humanVsHumanBtn.addEventListener("click", () => {
 resetBrainBtn.addEventListener("click", () => {
   if (demoRunning || trainingRunning) return;
   unlockAudio();
-  brain = defaultBrain();
-  saveBrain();
-  state.log = "AI learning reset.";
+  resetPersistentBrain();
+  state.log = "AI learning reset and permanent storage cleared.";
   render();
 });
 rulesBtn.addEventListener("click", showRules);

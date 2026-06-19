@@ -1,9 +1,12 @@
 const STORAGE_KEY = "empireAI.childBrain.v1";
 const SCOREBOARD_VERSION = 4;
+const BRAIN_STORAGE_VERSION = 1;
 
 function defaultBrain() {
   return {
     lessons: 0,
+    storageVersion: BRAIN_STORAGE_VERSION,
+    lastSavedAt: null,
     scoreboardVersion: SCOREBOARD_VERSION,
     records: {
       human: { wins: 0, losses: 0 },
@@ -15,6 +18,8 @@ function defaultBrain() {
       landCaptureNeutralCity: 10,
       attackEnemy: 2.4,
       attackTransport: 7.5,
+      hunterAttackTransport: 12,
+      hunterAttackLoadedTransport: 8,
       shoreAttackShip: 4.8,
       shoreAttackLoadedTransport: 6.5,
       boardTransport: 1.8,
@@ -42,6 +47,7 @@ function defaultBrain() {
       cityPressure: 1.5,
       moveToEnemy: 0.65,
       moveToTransport: 2.8,
+      hunterMoveToTransport: 5.5,
       boostProduction: 1.4,
       protectCity: 0.35,
       stayAlive: 0.8,
@@ -51,7 +57,8 @@ function defaultBrain() {
 
 function loadBrain() {
   try {
-    return normalizeBrain(JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultBrain());
+    const storedBrain = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return normalizeBrain(storedBrain || defaultBrain());
   } catch {
     return defaultBrain();
   }
@@ -66,6 +73,8 @@ function normalizeBrain(savedBrain) {
   return {
     ...freshBrain,
     ...savedBrain,
+    storageVersion: BRAIN_STORAGE_VERSION,
+    lastSavedAt: savedBrain?.lastSavedAt ?? null,
     scoreboardVersion: SCOREBOARD_VERSION,
     records: {
       human: {
@@ -85,8 +94,38 @@ function normalizeBrain(savedBrain) {
 }
 
 function saveBrain() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(brain));
+  const savedBrain = normalizeBrain({
+    ...brain,
+    storageVersion: BRAIN_STORAGE_VERSION,
+    lastSavedAt: new Date().toISOString(),
+  });
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedBrain));
+    brain = savedBrain;
+  } catch {
+    brain = normalizeBrain({ ...savedBrain, lastSavedAt: null });
+  }
 }
+
+function resetPersistentBrain() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Reset still works in memory if browser storage is unavailable.
+  }
+  brain = defaultBrain();
+  saveBrain();
+}
+
+function savedBrainText() {
+  if (!brain.lastSavedAt) return "Not yet";
+  const savedAt = new Date(brain.lastSavedAt);
+  if (Number.isNaN(savedAt.getTime())) return "Saved";
+  return savedAt.toLocaleString();
+}
+
+window.addEventListener("beforeunload", () => saveBrain());
+saveBrain();
 
 
 function chooseAiProductionType(owner = "ai") {
@@ -99,7 +138,7 @@ function chooseAiProductionType(owner = "ai") {
   const tanks = ownerUnits.filter((unit) => unit.type === "tank").length;
 
   if (transports < Math.max(1, Math.floor(ownerCities / 3))) return "transport";
-  if (destroyers < Math.max(1, Math.floor(ownerCities / 3))) return "destroyer";
+  if (destroyers < Math.max(1, Math.floor(ownerCities / 2))) return "destroyer";
   if (fighters < Math.max(1, Math.floor(ownerCities / 2))) return "fighter";
   if (amphibious < Math.max(1, Math.floor(ownerCities / 2))) return "amphibious";
   if (tanks < Math.max(1, Math.floor(ownerCities / 2))) return "tank";
@@ -186,25 +225,31 @@ function fuelRatio(unit) {
 }
 
 function fuelReturnScore(army, move, ownCities) {
-  if (!Number.isFinite(army.fuel)) return 0;
+  if (!Number.isFinite(army.fuel) || !ownCities.length) return 0;
   const ratio = fuelRatio(army);
-  if (ratio > 0.45) return 0;
   const currentNearest = nearestDistance(ownCities, army);
   const nearest = nearestDistance(ownCities, move);
   const advance = Math.max(0, currentNearest - nearest) / Math.max(1, unitMoveRange(army));
-  const urgency = 1 - ratio;
+  const projectedFuel = army.fuel - distance(army, move);
+  const reserve = Math.max(2, Math.ceil(unitMoveRange(army) * 1.5));
+  const lowRatio = ratio <= 0.65 ? 1 - ratio : 0;
+  const reservePressure = Math.max(0, nearest + reserve - projectedFuel) / Math.max(1, reserve + nearest);
+  if (!lowRatio && !reservePressure) return 0;
+  const urgency = Math.max(lowRatio, reservePressure);
   const refuelNow = ownCities.some((city) => city.x === move.x && city.y === move.y) ? 1 : 0;
   return Math.max(advance, refuelNow) * urgency;
 }
 
 function lowFuelDanger(unit, move, ownCities) {
-  if (!Number.isFinite(unit.fuel)) return 0;
+  if (!Number.isFinite(unit.fuel) || !ownCities.length) return 0;
   const projectedFuel = unit.fuel - distance(unit, move);
   const ratio = fuelRatio(unit);
-  if (ratio > 0.35) return 0;
+  const reserve = Math.max(2, Math.ceil(unitMoveRange(unit) * 1.5));
   const nearestOwnCity = nearestDistance(ownCities, move);
   const canStillReachCity = nearestOwnCity <= Math.max(0, projectedFuel);
-  return canStillReachCity ? 0 : 1 - ratio;
+  const reserveMissing = nearestOwnCity + reserve - projectedFuel;
+  if (canStillReachCity && reserveMissing <= 0 && ratio > 0.5) return 0;
+  return Math.max(1 - ratio, reserveMissing / Math.max(1, reserve + nearestOwnCity));
 }
 
 function scoreMove(army, move, currentState, learningBrain) {
@@ -224,6 +269,7 @@ function scoreMove(army, move, currentState, learningBrain) {
   const nearestNeutralCity = nearestDistance(neutralCities, move);
   const nearestEnemy = nearestDistance(enemyArmies, move);
   const nearestTransport = nearestDistance(enemyTransports, move);
+  const currentNearestTransport = nearestDistance(enemyTransports, army);
   const nearestOwnCity = nearestDistance(ownCities, move);
   const cityAdvance = Math.max(0, currentNearestCity - nearestCity) / unitMoveRange(army);
   const neutralCityAdvance = Math.max(0, currentNearestNeutralCity - nearestNeutralCity) / unitMoveRange(army);
@@ -232,10 +278,14 @@ function scoreMove(army, move, currentState, learningBrain) {
   const landUnit = isLandCombatUnit(army);
   const boostProduction = isFighter(army) && city?.owner === army.owner ? Math.min(city.produce, unitStrikePower(army)) / unitStrikePower(army) : 0;
   const shoreAttack = canShoreAttack(army, move, currentState);
-  const loadedTransportCargo = shoreAttack && enemy?.type === "transport" ? transportCargoUsed(enemy) / TRANSPORT_CAPACITY : 0;
+  const targetTransportCargo = enemy?.type === "transport" ? transportCargoUsed(enemy) / TRANSPORT_CAPACITY : 0;
+  const loadedTransportCargo = shoreAttack && enemy?.type === "transport" ? targetTransportCargo : 0;
   const emptyTransport = army.type === "transport" && !army.cargo?.length;
   const emptyPickup = emptyTransport ? emptyTransportPickupScore(army, move, currentState) : { advance: 0, nearCargo: 0, idle: 0 };
   const amphibious = army.type === "amphibious";
+  const transportHunter = army.type === "destroyer" || isFighter(army);
+  const transportAdvance = Math.max(0, currentNearestTransport - nearestTransport) / unitMoveRange(army);
+  const transportPressure = nearestTransport <= 4 ? (5 - nearestTransport) / 5 : 0;
 
   const features = {
     captureCity: city && city.owner !== army.owner && canConquerCity(army) ? 1 : 0,
@@ -243,6 +293,8 @@ function scoreMove(army, move, currentState, learningBrain) {
     landCaptureNeutralCity: city?.owner === "neutral" && landUnit ? 1 : 0,
     attackEnemy: enemy ? 1 : 0,
     attackTransport: enemy?.type === "transport" ? 1 : 0,
+    hunterAttackTransport: transportHunter && enemy?.type === "transport" ? 1 : 0,
+    hunterAttackLoadedTransport: transportHunter ? targetTransportCargo : 0,
     shoreAttackShip: shoreAttack ? 1 : 0,
     shoreAttackLoadedTransport: loadedTransportCargo,
     boardTransport: friendlyTransport ? 1 : 0,
@@ -270,6 +322,7 @@ function scoreMove(army, move, currentState, learningBrain) {
     cityPressure,
     moveToEnemy: (12 - nearestEnemy) / 12,
     moveToTransport: isFighter(army) ? (12 - nearestTransport) / 12 : 0,
+    hunterMoveToTransport: transportHunter ? Math.max(transportAdvance, transportPressure) : 0,
     boostProduction,
     protectCity: (12 - nearestOwnCity) / 12,
     stayAlive: army.hp / unitMaxHp(army),
@@ -345,10 +398,12 @@ function recordGameResult(winner) {
 function learnFromGame(aiWon, options = {}) {
   const reward = aiWon ? 1 : -1;
   const rate = 0.08;
+  const defaultWeights = defaultBrain().weights;
   const memories = state.aiMemory.length ? state.aiMemory : [{ stayAlive: 1 }];
   for (const features of memories) {
     for (const [name, value] of Object.entries(features)) {
-      brain.weights[name] = Math.max(-2, Math.min(8, brain.weights[name] + reward * rate * value));
+      const upperLimit = Math.max(8, defaultWeights[name] ?? 8);
+      brain.weights[name] = Math.max(-2, Math.min(upperLimit, brain.weights[name] + reward * rate * value));
     }
   }
   brain.lessons += 1;
@@ -363,6 +418,7 @@ function renderBrain() {
     ["AI losses", brain.records.ai.losses],
     ["Human wins", brain.records.human.wins],
     ["Human losses", brain.records.human.losses],
+    ["Saved", savedBrainText()],
   ];
   brainStats.innerHTML = rows.map(([name, value]) => `<dt>${name}</dt><dd>${value}</dd>`).join("");
 }
