@@ -19,6 +19,17 @@
         terrain: "land",
         produceWeight: 22,
       },
+      amphibious: {
+        label: "amphibious compact vehicle",
+        hitpoints: 4,
+        speed: 2,
+        productionTurns: 5,
+        hitPower: 1,
+        terrain: "amphibious",
+        fuel: 10,
+        cargoSize: 2,
+        produceWeight: 12,
+      },
       transport: {
         label: "transporter ship",
         hitpoints: 3,
@@ -67,6 +78,7 @@
         productionTurns: config.productionTurns ?? defaults[type]?.productionTurns ?? defaults.infantry.productionTurns,
         terrain: normalizeTerrain(config.terrain ?? defaults[type]?.terrain ?? defaults.infantry.terrain),
         produceWeight: config.produceWeight ?? defaults[type]?.produceWeight ?? 1,
+        cargoSize: config.cargoSize ?? defaults[type]?.cargoSize,
       };
     }
 

@@ -17,11 +17,22 @@
     "terrain": "land",
     "produceWeight": 22
   },
+  "amphibious": {
+    "label": "amphibious compact vehicle",
+    "hitpoints": 3,
+    "speed": 2,
+    "productionTurns": 12,
+    "hitPower": 2,
+    "terrain": "amphibious",
+    "fuel": 10,
+    "cargoSize": 2,
+    "produceWeight": 12
+  },
   "transport": {
     "label": "transporter ship",
     "hitpoints": 3,
     "speed": 2,
-    "productionTurns": 5,
+    "productionTurns": 7,
     "hitPower": 1,
     "terrain": "water",
     "produceWeight": 13

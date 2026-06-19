@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EmpireAI</title>
-    <link rel="stylesheet" href="./styles.css?v=v25-space-skip-unit-1" />
+    <link rel="stylesheet" href="./styles.css?v=v32-amphibious-sea-speed-1" />
   </head>
   <body>
     <main class="app">
@@ -82,24 +82,25 @@
       <div class="rules-dialog" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
         <button id="rulesCloseBtn" class="rules-close" type="button" aria-label="Close rules">×</button>
         <h2 id="rulesTitle">Rules</h2>
-        <p>20 x 20 sea map with independent connected islands. Army units move 1 square, tanks and transporter ships move 2, destroyers move 8, and fighter planes move 6.</p>
-        <p>Both empires begin with 3 armies and 1 armored tank. Cities can produce armies, armored tanks, transporter ships, destroyers, and fighter planes.</p>
-        <p>Armies have 5 HP and strike for 1. Tanks have 10 HP and strike for 2. Transporter ships have 3 HP and strike for 1. Destroyers have 4 HP, strike for 3, and fuel from the unit JSON file. Fighter planes have 1 HP, strike for 3, and fuel for 15 movements.</p>
-        <p>Only armies and tanks can capture cities. When a fighter returns to a friendly city, its hit power reduces that city's remaining production time. Units with fuel lose 1 fuel for each square moved, refuel by moving onto the same square as their own city, and are destroyed if fuel reaches 0.</p>
-        <p>Land units stay on land. Transporter ships and destroyers move only on water. Armies and tanks can attack enemy transporter ships or destroyers from land without entering the water. If a transporter is sunk, all cargo inside is destroyed. Fighter planes can fly over land and sea.</p>
-        <p>Armies and tanks can board a friendly transporter by moving onto the ship square. Units inside are locked and cannot move until the transporter unloads them.</p>
-        <p>A transporter carries up to 6 armies or 3 tanks, moves only on water, and can unload one carried unit to adjacent land when it is next to land.</p>
-        <p>10 cities produce units for their owner: armies take 3 turns, tanks 6 turns, transporter ships 5 turns, destroyers 12 turns, and fighter planes 6 turns. A city changes owner when a unit enters it.</p>
-        <p>Double-click a blue city to choose whether it will produce an army, armored tank, fighter plane, transporter ship, or destroyer. Single-clicking a city moves the active unit into it when the move is legal.</p>
+        <p>20 x 20 sea map with independent connected islands. Army units move 1 square, tanks, amphibious compact vehicles, and transporter ships move 2, destroyers move 8, and fighter planes move 6.</p>
+        <p>Both empires begin with 3 armies and 1 armored tank. Cities can produce armies, armored tanks, amphibious compact vehicles, transporter ships, destroyers, and fighter planes.</p>
+        <p>Armies have 5 HP and strike for 1. Tanks have 10 HP and strike for 2. Amphibious compact vehicles have 4 HP, move 2, cargo size 2, and fuel 10. Transporter ships have 3 HP and strike for 1. Destroyers have 4 HP, strike for 3, and fuel from the unit JSON file. Fighter planes have 1 HP, strike for 3, and fuel for 15 movements.</p>
+        <p>Armies, tanks, and amphibious compact vehicles can capture cities. When a fighter returns to a friendly city, its hit power reduces that city's remaining production time. Units with fuel lose 1 fuel for each square moved, refuel by moving onto the same square as their own city, and are destroyed if fuel reaches 0.</p>
+        <p>Land units stay on land. Amphibious compact vehicles can move on land and water. Transporter ships and destroyers move only on water. Armies and tanks can attack enemy transporter ships or destroyers from land without entering the water. If a transporter is sunk, all cargo inside is destroyed. Fighter planes can fly over land and sea.</p>
+        <p>Armies, tanks, and amphibious compact vehicles can board a friendly transporter by moving onto the ship square. Units inside are locked and cannot move until the transporter unloads them.</p>
+        <p>A transporter carries up to 6 armies, 3 tanks, or 3 amphibious compact vehicles, moves only on water, and can unload one carried unit to adjacent land when it is next to land.</p>
+        <p>10 cities produce units for their owner: armies take 3 turns, amphibious compact vehicles and transporter ships 5 turns, tanks and fighter planes 6 turns, and destroyers 12 turns. A city changes owner when a unit enters it.</p>
+        <p>Double-click a blue city to choose whether it will produce an army, armored tank, amphibious compact vehicle, fighter plane, transporter ship, or destroyer. Single-clicking a city moves the active unit into it when the move is legal.</p>
         <p>Press Space to skip only the active unit. Click Skip Turn to end the whole side's turn.</p>
         <p>Enemy units on the same square fight randomly until one unit reaches 0 hitpoints.</p>
-        <p>Win when the opponent has no owned cities and no armies or tanks that can conquer a city. Armies and tanks inside transporters still count. Black unoccupied cities do not need to be conquered.</p>
+        <p>Win when the opponent has no owned cities and no armies, tanks, or amphibious compact vehicles that can conquer a city. Cargo inside transporters still counts. Black unoccupied cities do not need to be conquered.</p>
       </div>
     </section>
 
-    <script src="./core-helpers.js?v=v25-space-skip-unit-1"></script>
-    <script src="./unit-helpers.js?v=v25-space-skip-unit-1"></script>
-    <script src="./map-helpers.js?v=v25-space-skip-unit-1"></script>
-    <script src="./game.js?v=v25-space-skip-unit-1"></script>
+    <script src="./core-helpers.js?v=v32-amphibious-sea-speed-1"></script>
+    <script src="./unit-helpers.js?v=v32-amphibious-sea-speed-1"></script>
+    <script src="./map-helpers.js?v=v32-amphibious-sea-speed-1"></script>
+    <script src="./ai.js?v=v32-amphibious-sea-speed-1"></script>
+    <script src="./game.js?v=v32-amphibious-sea-speed-1"></script>
   </body>
 </html>

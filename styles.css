@@ -388,6 +388,24 @@ h2 {
   height: 16%;
 }
 
+.army.amphibious {
+  width: 78%;
+  height: 60%;
+  border-radius: 42% 42% 8px 8px;
+}
+
+.army.amphibious::before {
+  inset: 18% 20% 35%;
+  border-radius: 6px 6px 3px 3px;
+}
+
+.army.amphibious::after {
+  left: 8%;
+  right: 8%;
+  bottom: 12%;
+  height: 14%;
+}
+
 .army.transport {
   width: 82%;
   height: 58%;
@@ -474,6 +492,34 @@ h2 {
   height: 28%;
   border-radius: 99px;
   background: #ffffff;
+}
+
+.army.amphibious .army-symbol {
+  left: 18%;
+  top: 18%;
+  width: 64%;
+  height: 28%;
+  border-radius: 99px 99px 7px 7px;
+  clip-path: none;
+}
+
+.army.amphibious .army-symbol::before,
+.army.amphibious .army-symbol::after {
+  content: "";
+  position: absolute;
+  bottom: -78%;
+  width: 22%;
+  height: 54%;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.army.amphibious .army-symbol::before {
+  left: 10%;
+}
+
+.army.amphibious .army-symbol::after {
+  right: 10%;
 }
 
 .army.transport .army-symbol {
