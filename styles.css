@@ -261,7 +261,16 @@ h2 {
 }
 
 .cell.water {
-  background: var(--water);
+  background:
+    radial-gradient(ellipse at 22% 38%, rgba(191, 230, 246, 0.62) 0 9%, transparent 10%),
+    radial-gradient(ellipse at 72% 70%, rgba(191, 230, 246, 0.48) 0 8%, transparent 9%),
+    linear-gradient(160deg, rgba(186, 230, 253, 0.22) 0 1px, transparent 1px 11px),
+    var(--water);
+  background-size:
+    18px 10px,
+    20px 12px,
+    14px 14px,
+    auto;
   cursor: not-allowed;
 }
 
