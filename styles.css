@@ -142,7 +142,10 @@ h2 {
   gap: 6px;
 }
 
-.actions button:first-child {
+#endTurnBtn {
+  grid-column: 1 / -1;
+  min-height: 48px;
+  margin-top: 6px;
   background: #233142;
   color: white;
 }

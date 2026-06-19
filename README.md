@@ -8,15 +8,16 @@ EmpireAI is a first playable turn-based strategy prototype built around a 20 x 2
 - Land is split into independent connected islands, and land units cannot enter water.
 - There are 10 cities.
 - Cities produce armies, tanks, transporter ships, destroyers, and fighter planes for their current owner.
-- A city is conquered when a non-fighter unit enters it.
+- A city is conquered when an army or tank enters it.
 - Fighter planes cannot conquer cities, but returning to a friendly city reduces that city's production time by the fighter's hit power.
 - Destroyer ships move on water, have 4 hitpoints, move 8 squares, strike for 3, and take 12 turns to produce.
 - Units with fuel lose 1 fuel per square moved, refuel on the same square as their own city, and are destroyed when fuel reaches 0.
+- Double-click a friendly city to change production. Single-clicking moves the active unit into the city when the move is legal.
 - Transporter ships can carry armies and tanks. If a transporter is sunk, all cargo inside it is destroyed.
 - Armies and tanks can attack transporter ships and destroyers from land without entering the water, dealing their hit power as damage.
 - Enemy units on the same square fight randomly until one unit reaches 0 hitpoints and is destroyed.
-- A player wins when the opponent has no units, no owned cities, and no usable transporter ships.
-- Press Space, or click **Skip Turn**, to skip the current side's turn and let the opponent start.
+- A player wins when the opponent has no owned cities and no armies or tanks that can conquer a city. Armies and tanks inside transporters still count.
+- Press Space to skip only the active unit. Click **Skip Turn** to end the current side's turn and let the opponent start.
 
 ## AI Learning
 

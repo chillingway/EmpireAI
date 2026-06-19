@@ -7,6 +7,7 @@ const FIGHTER_FUEL = 15;
 const STORAGE_KEY = "empireAI.childBrain.v1";
 const SCOREBOARD_VERSION = 4;
 const PRODUCTION_ORDER = ["infantry", "tank", "transport", "destroyer", "fighter"];
+const CITY_PRODUCTION_DOUBLE_CLICK_MS = 260;
 
 const { directions, distance, farEnough, key, rand, shuffle } = window.EmpireCore;
 const inBounds = (x, y) => window.EmpireCore.inBounds(x, y, SIZE);
@@ -74,6 +75,7 @@ let trainingRunning = false;
 let humanVsHuman = false;
 let livePlayPaused = false;
 let productionCityId = null;
+let cityClickTimer = null;
 
 function defaultBrain() {
   return {
@@ -276,6 +278,10 @@ function isLandCombatUnit(unit) {
   return unit.type === "infantry" || unit.type === "tank";
 }
 
+function canConquerCity(unit) {
+  return isLandCombatUnit(unit);
+}
+
 function isShip(unit) {
   return unit?.type === "transport" || unit?.type === "destroyer";
 }
@@ -433,6 +439,12 @@ function activeUnitsFor(owner) {
   return armiesFor(owner).filter((army) => army.type !== "transport").concat(usableTransportersFor(owner));
 }
 
+function cityConquerorsFor(owner) {
+  const deployed = armiesFor(owner).filter(canConquerCity);
+  const cargo = transportersFor(owner).flatMap((transport) => (transport.cargo || []).filter(canConquerCity));
+  return deployed.concat(cargo);
+}
+
 function activePlayerOwner() {
   return state.phase === "ai" ? "ai" : "human";
 }
@@ -519,7 +531,7 @@ function resolveShoreAttack(attacker, defender) {
 }
 
 function captureCity(army) {
-  if (isFighter(army)) return false;
+  if (!canConquerCity(army)) return false;
   const city = cityAt(army.x, army.y);
   if (city && city.owner !== army.owner) {
     city.owner = army.owner;
@@ -973,8 +985,8 @@ function showVictoryMessage(winner) {
   victoryTitle.textContent = winner === "human" ? "Blue Victory" : state.humanVsHuman ? "Red Victory" : "Defeat";
   victoryDetail.textContent =
     winner === "human"
-      ? "Blue has destroyed every red unit and city, and sunk or neutralized every red transporter."
-      : "Red has destroyed every blue unit and city, and sunk or neutralized every blue transporter.";
+      ? "Red has no cities or army/tank units that can conquer cities left."
+      : "Blue has no cities or army/tank units that can conquer cities left.";
   victoryOverlay.classList.add("show");
   victoryOverlay.setAttribute("aria-hidden", "false");
   launchVictoryStars();
@@ -1087,6 +1099,29 @@ function skipTurn() {
   finishActiveTurnAfterMove();
 }
 
+function skipActiveUnit() {
+  if (trainingRunning || demoRunning || isAnimating || state.gameOver || !["human", "ai"].includes(state.phase)) return;
+  if (livePlayPaused) return;
+  if (!state.humanVsHuman && state.phase !== "human") return;
+  const owner = activePlayerOwner();
+  const activeArmy = activateNextArmy();
+  if (!activeArmy) return;
+
+  activeArmy.acted = true;
+  state.skippedArmyIds = [];
+  selectedArmyId = null;
+
+  if (allActiveArmiesActed()) {
+    state.log = `${sideName(owner)} skipped ${unitLabel(activeArmy)}.`;
+    finishActiveTurnAfterMove();
+    return;
+  }
+
+  const nextArmy = activateNextArmy();
+  state.log = `${sideName(owner)} skipped ${unitLabel(activeArmy)}. ${unitLabel(nextArmy)} is active.`;
+  render();
+}
+
 function nearestDistance(items, point, fallback = 12) {
   if (!items.length) return fallback;
   return Math.min(...items.map((item) => distance(point, item)));
@@ -1135,8 +1170,8 @@ function scoreMove(army, move, currentState, learningBrain) {
   const loadedTransportCargo = shoreAttack && enemy?.type === "transport" ? transportCargoUsed(enemy) / TRANSPORT_CAPACITY : 0;
 
   const features = {
-    captureCity: city && city.owner !== army.owner && !isFighter(army) ? 1 : 0,
-    captureNeutralCity: city?.owner === "neutral" && !isFighter(army) ? 1 : 0,
+    captureCity: city && city.owner !== army.owner && canConquerCity(army) ? 1 : 0,
+    captureNeutralCity: city?.owner === "neutral" && canConquerCity(army) ? 1 : 0,
     landCaptureNeutralCity: city?.owner === "neutral" && landUnit ? 1 : 0,
     attackEnemy: enemy ? 1 : 0,
     attackTransport: enemy?.type === "transport" ? 1 : 0,
@@ -1326,26 +1361,24 @@ function learnFromGame(aiWon, options = {}) {
 
 function checkVictory() {
   if (state.gameOver) return;
-  const humanUnits = activeUnitsFor("human");
-  const aiUnits = activeUnitsFor("ai");
-  const humanWon = aiUnits.length === 0 && citiesFor("ai").length === 0;
-  const aiWon = humanUnits.length === 0 && citiesFor("human").length === 0;
+  const humanWon = cityConquerorsFor("ai").length === 0 && citiesFor("ai").length === 0;
+  const aiWon = cityConquerorsFor("human").length === 0 && citiesFor("human").length === 0;
 
   if (humanWon) {
     state.gameOver = true;
     state.winner = "human";
-    state.log = "You win. Red has no units, cities, or usable transporter ships left.";
+    state.log = "You win. Red has no cities or army/tank units that can conquer cities left.";
     if (state.humanVsHuman) {
-      state.log = "Blue wins. Red has no units, cities, or usable transporter ships left.";
+      state.log = "Blue wins. Red has no cities or army/tank units that can conquer cities left.";
     } else {
       learnFromGame(false, { recordResult: state.recordResults !== false });
     }
   } else if (aiWon) {
     state.gameOver = true;
     state.winner = "ai";
-    state.log = `${state.humanVsHuman ? "Red wins" : "AI wins"}. Blue has no units, cities, or usable transporter ships left.`;
+    state.log = `${state.humanVsHuman ? "Red wins" : "AI wins"}. Blue has no cities or army/tank units that can conquer cities left.`;
     if (state.humanVsHuman) {
-      state.log = "Red wins. Blue has no units, cities, or usable transporter ships left.";
+      state.log = "Red wins. Blue has no cities or army/tank units that can conquer cities left.";
     } else {
       learnFromGame(true, { recordResult: state.recordResults !== false });
     }
@@ -1447,7 +1480,34 @@ function chooseHumanProduction(type, cityId = productionCityId) {
   hideProductionModal({ continueTurn: true });
 }
 
-async function handleCellClick(x, y) {
+function clearCityClickTimer() {
+  if (!cityClickTimer) return;
+  window.clearTimeout(cityClickTimer.timer);
+  cityClickTimer = null;
+}
+
+function scheduleFriendlyCityClick(x, y, owner) {
+  const pending = cityClickTimer;
+  if (pending && pending.x === x && pending.y === y && pending.owner === owner) {
+    clearCityClickTimer();
+    const city = cityAt(x, y);
+    if (city?.owner === owner) showProductionModal(city);
+    return;
+  }
+
+  clearCityClickTimer();
+  cityClickTimer = {
+    x,
+    y,
+    owner,
+    timer: window.setTimeout(() => {
+      cityClickTimer = null;
+      handleCellClick(x, y, { skipFriendlyCityDoubleClick: true });
+    }, CITY_PRODUCTION_DOUBLE_CLICK_MS),
+  };
+}
+
+async function handleCellClick(x, y, options = {}) {
   if (
     trainingRunning ||
     demoRunning ||
@@ -1465,13 +1525,26 @@ async function handleCellClick(x, y) {
   const clickedArmy = armyAt(x, y);
   const clickedCity = cityAt(x, y);
   const activeArmy = activateNextArmy();
+  if (
+    cityClickTimer &&
+    !options.skipFriendlyCityDoubleClick &&
+    (cityClickTimer.x !== x || cityClickTimer.y !== y || clickedCity?.owner !== currentOwner)
+  ) {
+    clearCityClickTimer();
+  }
   const activeCanMoveToClicked =
     activeArmy &&
     (activeArmy.x !== x || activeArmy.y !== y) &&
     legalMoves(activeArmy).some((move) => move.x === x && move.y === y);
 
-  if (clickedCity?.owner === currentOwner) {
-    showProductionModal(clickedCity);
+  if (clickedCity?.owner === currentOwner && !options.skipFriendlyCityDoubleClick) {
+    scheduleFriendlyCityClick(x, y, currentOwner);
+    return;
+  }
+
+  if (clickedCity?.owner === currentOwner && !activeCanMoveToClicked) {
+    state.log = `Double-click the city to change production.`;
+    render();
     return;
   }
 
@@ -1928,7 +2001,7 @@ document.addEventListener("keydown", (event) => {
   if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
   event.preventDefault();
   unlockAudio();
-  skipTurn();
+  skipActiveUnit();
 });
 trainBtn.addEventListener("click", () => {
   if (demoRunning || trainingRunning) return;

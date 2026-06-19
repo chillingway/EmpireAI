@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EmpireAI</title>
-    <link rel="stylesheet" href="./styles.css?v=v23-production-mode-fix-1" />
+    <link rel="stylesheet" href="./styles.css?v=v25-space-skip-unit-1" />
   </head>
   <body>
     <main class="app">
@@ -27,7 +27,6 @@
       <section class="play-area">
         <aside class="panel">
           <div class="actions">
-            <button id="endTurnBtn" type="button">Skip Turn</button>
             <button id="newGameBtn" type="button" onclick="startNewGame()">New Game</button>
             <button id="livePauseBtn" type="button">Stop Live Play</button>
             <button id="humanVsHumanBtn" type="button">Human vs Human</button>
@@ -41,6 +40,7 @@
               <span>Demo tempo</span>
               <input id="demoTempoInput" type="number" min="0.1" max="3" step="0.1" value="0.5" />
             </label>
+            <button id="endTurnBtn" type="button">Skip Turn</button>
             <button id="demoAiBtn" type="button">Live AI Demo</button>
           </div>
 
@@ -64,7 +64,7 @@
       <div class="victory-message">
         <p id="victoryKicker">Empire secured</p>
         <h2 id="victoryTitle">Victory</h2>
-        <p id="victoryDetail">The opponent has no units or cities left.</p>
+        <p id="victoryDetail">The opponent has no cities or units that can conquer cities left.</p>
         <button id="victoryNewGameBtn" type="button" onclick="startNewGame()">New Game</button>
       </div>
     </section>
@@ -85,20 +85,21 @@
         <p>20 x 20 sea map with independent connected islands. Army units move 1 square, tanks and transporter ships move 2, destroyers move 8, and fighter planes move 6.</p>
         <p>Both empires begin with 3 armies and 1 armored tank. Cities can produce armies, armored tanks, transporter ships, destroyers, and fighter planes.</p>
         <p>Armies have 5 HP and strike for 1. Tanks have 10 HP and strike for 2. Transporter ships have 3 HP and strike for 1. Destroyers have 4 HP, strike for 3, and fuel from the unit JSON file. Fighter planes have 1 HP, strike for 3, and fuel for 15 movements.</p>
-        <p>Fighter planes cannot capture cities. When a fighter returns to a friendly city, its hit power reduces that city's remaining production time. Units with fuel lose 1 fuel for each square moved, refuel by moving onto the same square as their own city, and are destroyed if fuel reaches 0.</p>
+        <p>Only armies and tanks can capture cities. When a fighter returns to a friendly city, its hit power reduces that city's remaining production time. Units with fuel lose 1 fuel for each square moved, refuel by moving onto the same square as their own city, and are destroyed if fuel reaches 0.</p>
         <p>Land units stay on land. Transporter ships and destroyers move only on water. Armies and tanks can attack enemy transporter ships or destroyers from land without entering the water. If a transporter is sunk, all cargo inside is destroyed. Fighter planes can fly over land and sea.</p>
         <p>Armies and tanks can board a friendly transporter by moving onto the ship square. Units inside are locked and cannot move until the transporter unloads them.</p>
         <p>A transporter carries up to 6 armies or 3 tanks, moves only on water, and can unload one carried unit to adjacent land when it is next to land.</p>
         <p>10 cities produce units for their owner: armies take 3 turns, tanks 6 turns, transporter ships 5 turns, destroyers 12 turns, and fighter planes 6 turns. A city changes owner when a unit enters it.</p>
-        <p>Click a blue city to choose whether it will produce an army, armored tank, fighter plane, transporter ship, or destroyer.</p>
+        <p>Double-click a blue city to choose whether it will produce an army, armored tank, fighter plane, transporter ship, or destroyer. Single-clicking a city moves the active unit into it when the move is legal.</p>
+        <p>Press Space to skip only the active unit. Click Skip Turn to end the whole side's turn.</p>
         <p>Enemy units on the same square fight randomly until one unit reaches 0 hitpoints.</p>
-        <p>Win when the opponent has no units, no owned cities, and every enemy transporter is sunk or neutralized so it cannot move or unload. Black unoccupied cities do not need to be conquered.</p>
+        <p>Win when the opponent has no owned cities and no armies or tanks that can conquer a city. Armies and tanks inside transporters still count. Black unoccupied cities do not need to be conquered.</p>
       </div>
     </section>
 
-    <script src="./core-helpers.js?v=v23-production-mode-fix-1"></script>
-    <script src="./unit-helpers.js?v=v23-production-mode-fix-1"></script>
-    <script src="./map-helpers.js?v=v23-production-mode-fix-1"></script>
-    <script src="./game.js?v=v23-production-mode-fix-1"></script>
+    <script src="./core-helpers.js?v=v25-space-skip-unit-1"></script>
+    <script src="./unit-helpers.js?v=v25-space-skip-unit-1"></script>
+    <script src="./map-helpers.js?v=v25-space-skip-unit-1"></script>
+    <script src="./game.js?v=v25-space-skip-unit-1"></script>
   </body>
 </html>
