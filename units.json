@@ -6,6 +6,7 @@
     "productionTurns": 3,
     "hitPower": 1,
     "terrain": "land",
+    "canEnterCity": true,
     "produceWeight": 55
   },
   "tank": {
@@ -15,6 +16,7 @@
     "productionTurns": 6,
     "hitPower": 2,
     "terrain": "land",
+    "canEnterCity": true,
     "produceWeight": 22
   },
   "amphibious": {
@@ -24,6 +26,7 @@
     "productionTurns": 12,
     "hitPower": 2,
     "terrain": "amphibious",
+    "canEnterCity": true,
     "fuel": 10,
     "cargoSize": 2,
     "produceWeight": 12
@@ -35,6 +38,7 @@
     "productionTurns": 7,
     "hitPower": 1,
     "terrain": "water",
+    "canEnterCity": true,
     "fuel": 30,
     "produceWeight": 13
   },
@@ -45,6 +49,7 @@
     "productionTurns": 6,
     "hitPower": 3,
     "terrain": "air",
+    "canEnterCity": true,
     "fuel": 15,
     "produceWeight": 10
   },
@@ -55,6 +60,7 @@
     "productionTurns": 12,
     "hitPower": 3,
     "terrain": "sea",
+    "canEnterCity": true,
     "fuel": 100,
     "produceWeight": 10
   }

@@ -326,6 +326,26 @@ h2 {
   --city-accent: rgba(217, 70, 62, 0.72);
 }
 
+.city-garrison {
+  position: absolute;
+  z-index: 2;
+  right: 9%;
+  top: 9%;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 99px;
+  background: #f8fafc;
+  color: #111827;
+  border: 1px solid rgba(15, 23, 42, 0.4);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
+  font-size: 0.52rem;
+  line-height: 1;
+  font-weight: 900;
+}
+
 .army {
   position: relative;
   z-index: 1;

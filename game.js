@@ -92,6 +92,7 @@ function makeCity(id, x, y, owner) {
     owner,
     produce: unitProductionTurns(nextUnitType),
     nextUnitType,
+    garrison: [],
   };
 }
 
@@ -139,9 +140,22 @@ function cityProductionText(city) {
   const totalTurns = unitProductionTurns(type);
   const completedTurns = Math.max(0, totalTurns - turnsLeft);
   const progress = completedTurns > 0 ? `, ${completedTurns} completed` : "";
+  const garrison = city.garrison?.length
+    ? `, inside: ${city.garrison.map((unit) => unitLabel(unit)).join(", ")}`
+    : "";
   return `${city.owner} city, producing ${unitLabel({ type })}, ${turnsLeft} turn${
     turnsLeft === 1 ? "" : "s"
-  } left of ${totalTurns}${progress}`;
+  } left of ${totalTurns}${progress}${garrison}`;
+}
+
+function armyTitleText(army) {
+  if (army.type === "transport") {
+    return `${army.owner} ${unitLabel(army)}, ${army.hp} HP, cargo ${transportCargoUsed(army)} / ${TRANSPORT_CAPACITY}`;
+  }
+  if (Number.isFinite(army.fuel)) {
+    return `${army.owner} ${unitLabel(army)}, ${army.hp} HP, fuel ${army.fuel} / ${UNIT_TYPES[army.type]?.fuel}`;
+  }
+  return `${army.owner} ${unitLabel(army)}, ${army.hp} HP`;
 }
 
 function isFighter(unit) {
@@ -194,6 +208,12 @@ function canEnterTerrain(unit, terrain) {
   if (movement === "air") return true;
   if (movement === "amphibious") return terrain === "land" || terrain === "water";
   return terrain === movement;
+}
+
+function canEnterCell(unit, x, y, currentState = state) {
+  const city = currentState.cities.find((item) => item.x === x && item.y === y);
+  if (city?.owner === unit.owner && UNIT_TYPES[unit.type]?.canEnterCity) return true;
+  return canEnterTerrain(unit, currentState.terrain[y][x]);
 }
 
 function isLandCombatUnit(unit) {
@@ -360,7 +380,7 @@ function opponentOwner(owner) {
 function canTravelPath(unit, target, currentState = state) {
   const movement = UNIT_TYPES[unit.type]?.terrain || UNIT_TYPES.infantry.terrain;
   if (movement !== "land" && movement !== "amphibious") return true;
-  if (!canEnterTerrain(unit, currentState.terrain[target.y][target.x])) return false;
+  if (!canEnterCell(unit, target.x, target.y, currentState)) return false;
 
   const maxSteps = unitMoveRange(unit);
   const startKey = key(unit.x, unit.y);
@@ -379,7 +399,7 @@ function canTravelPath(unit, target, currentState = state) {
       const cellKey = key(x, y);
       if (!inBounds(x, y)) continue;
       const terrain = currentState.terrain[y][x];
-      if (!canEnterTerrain(unit, terrain)) continue;
+      if (!canEnterCell(unit, x, y, currentState)) continue;
       const stepCost = movement === "amphibious" && terrain === "water" ? 2 : 1;
       const cost = current.cost + stepCost;
       if (cost > maxSteps || cost >= (bestCost.get(cellKey) ?? Infinity)) continue;
@@ -421,7 +441,7 @@ function legalMoves(army, currentState = state) {
         addMove(move);
         continue;
       }
-      if (!canEnterTerrain(army, currentState.terrain[move.y][move.x])) continue;
+      if (!canEnterCell(army, move.x, move.y, currentState)) continue;
       if (!canTravelPath(army, move, currentState)) continue;
       addMove(move);
     }
@@ -451,6 +471,22 @@ function resolveBattle(attacker, defender) {
   return { winner, loser, attackerType, defenderType, cargoDestroyed };
 }
 
+function resolveCityGarrisonDefense(attacker, city) {
+  const defender = city.garrison?.[0];
+  if (!defender || defender.owner === attacker.owner) {
+    return { defended: false, city, remaining: city.garrison?.length || 0 };
+  }
+
+  const battle = resolveBattle(attacker, defender);
+  if (battle.loser.id === defender.id) city.garrison.shift();
+  return {
+    defended: true,
+    battle,
+    city,
+    remaining: city.garrison?.length || 0,
+  };
+}
+
 function resolveShoreAttack(attacker, defender) {
   const attackerType = attacker.type;
   const defenderType = defender.type;
@@ -469,6 +505,7 @@ function captureCity(army) {
   const city = cityAt(army.x, army.y);
   if (city && city.owner !== army.owner) {
     city.owner = army.owner;
+    city.garrison = [];
     city.manualProduction = false;
     city.nextUnitType = chooseProductionType(army.owner);
     city.produce = unitProductionTurns(city.nextUnitType);
@@ -477,23 +514,44 @@ function captureCity(army) {
   return false;
 }
 
-function productionSpawnCell(city, type) {
-  const prototype = { type };
-  if (!armyAt(city.x, city.y) && canEnterTerrain(prototype, state.terrain[city.y][city.x])) return city;
-  const candidates = shuffle(directions)
+function cityReleaseCell(city, unit) {
+  if (!armyAt(city.x, city.y) && canEnterCell(unit, city.x, city.y)) return city;
+  return directions
     .map((dir) => ({ x: city.x + dir.dx, y: city.y + dir.dy }))
-    .filter((cell) => inBounds(cell.x, cell.y) && !armyAt(cell.x, cell.y));
-  return candidates.find((cell) => canEnterTerrain(prototype, state.terrain[cell.y][cell.x])) || null;
+    .find(
+      (cell) =>
+        inBounds(cell.x, cell.y) &&
+        !armyAt(cell.x, cell.y) &&
+        canEnterCell(unit, cell.x, cell.y),
+    );
+}
+
+function releaseCityGarrison(city) {
+  if (!city.garrison?.length) return { released: false, city };
+  const unit = city.garrison[0];
+  const releaseCell = cityReleaseCell(city, unit);
+  if (!releaseCell) return { released: false, city, type: unit.type };
+  city.garrison.shift();
+  state.armies.push({ ...unit, x: releaseCell.x, y: releaseCell.y, acted: true, insideCity: false });
+  return { released: true, city, type: unit.type };
+}
+
+function releaseCityGarrisons() {
+  const releases = [];
+  for (const city of state.cities) {
+    const release = releaseCityGarrison(city);
+    if (release.released) releases.push(release);
+  }
+  return releases;
 }
 
 function produceCityUnit(city) {
   const type = city.nextUnitType || "infantry";
-  const spawn = productionSpawnCell(city, type);
-  if (!spawn) return { produced: false, type, spawn: null, city };
-  state.armies.push(makeUnit(city.owner, spawn.x, spawn.y, type));
+  const unit = { ...makeUnit(city.owner, null, null, type), acted: true, insideCity: true };
+  city.garrison = [...(city.garrison || []), unit];
   city.nextUnitType = city.manualProduction && !ownerUsesAiProduction(city.owner) ? type : chooseProductionType(city.owner);
   city.produce = unitProductionTurns(city.nextUnitType || "infantry");
-  return { produced: true, type, spawn, city };
+  return { produced: true, type, spawn: { x: city.x, y: city.y }, city, insideCity: true };
 }
 
 function boostCityProduction(unit) {
@@ -527,6 +585,7 @@ function serviceFuel(unit, fuelCost) {
 function moveArmy(army, target) {
   const fuelCost = distance(army, target);
   const defender = armyAt(target.x, target.y);
+  const targetCity = cityAt(target.x, target.y);
   if (canMoveOntoTransport(army, defender)) {
     defender.cargo = [...(defender.cargo || []), { ...army, x: null, y: null, acted: true, insideTransport: true }];
     state.armies = state.armies.filter((unit) => unit.id !== army.id);
@@ -536,8 +595,24 @@ function moveArmy(army, target) {
   if (canUnloadTransport(army, target)) {
     const { insideTransport, ...cargoUnit } = army.cargo.shift();
     const unloadedUnit = { ...cargoUnit, x: target.x, y: target.y, acted: true };
-    state.armies.push(unloadedUnit);
     army.acted = true;
+    if (targetCity?.owner && targetCity.owner !== unloadedUnit.owner && targetCity.garrison?.length) {
+      state.armies.push(unloadedUnit);
+      const cityDefense = resolveCityGarrisonDefense(unloadedUnit, targetCity);
+      if (state.armies.includes(unloadedUnit)) {
+        state.armies = state.armies.filter((unit) => unit.id !== unloadedUnit.id);
+        if (!cityDefense.remaining) {
+          state.armies.push(unloadedUnit);
+          const captured = captureCity(unloadedUnit);
+          const capturedCity = captured ? cityAt(target.x, target.y) : null;
+          return { moved: false, captured, capturedCity, unloaded: true, transport: army, unit: unloadedUnit, cityDefense, battle: cityDefense.battle };
+        }
+        army.cargo.unshift({ ...unloadedUnit, x: null, y: null, acted: true, insideTransport: true });
+      }
+      return { moved: false, captured: false, unloaded: true, transport: army, unit: unloadedUnit, cityDefense, battle: cityDefense.battle };
+    }
+
+    state.armies.push(unloadedUnit);
     const captured = captureCity(unloadedUnit);
     const capturedCity = captured ? cityAt(target.x, target.y) : null;
     return { moved: false, captured, capturedCity, unloaded: true, transport: army, unit: unloadedUnit };
@@ -552,6 +627,18 @@ function moveArmy(army, target) {
     }
     battle = resolveBattle(army, defender);
     if (!state.armies.includes(army)) return { moved: false, captured: false, battle };
+    if (targetCity?.owner && targetCity.owner !== army.owner && targetCity.garrison?.length) {
+      army.acted = true;
+      return { moved: false, captured: false, battle, cityHeld: true };
+    }
+  }
+
+  if (targetCity?.owner && targetCity.owner !== army.owner && targetCity.garrison?.length) {
+    const cityDefense = resolveCityGarrisonDefense(army, targetCity);
+    army.acted = true;
+    if (!state.armies.includes(army) || cityDefense.remaining) {
+      return { moved: false, captured: false, cityDefense, battle: cityDefense.battle };
+    }
   }
 
   army.x = target.x;
@@ -1086,6 +1173,7 @@ function toggleLivePlay() {
 
 function finishRound() {
   state.skippedArmyIds = [];
+  releaseCityGarrisons();
   produceArmies();
   armiesFor("human").forEach((army) => {
     army.acted = false;
@@ -1134,6 +1222,7 @@ function produceArmies() {
     }
   }
   announceProduction(productionEvents);
+  releaseCityGarrisons();
   return productionEvents;
 }
 
@@ -1360,6 +1449,15 @@ async function handleCellClick(x, y, options = {}) {
   }
   else if (result.shoreAttack && result.battle?.loser?.owner === currentOwner) state.log = `${sideName(currentOwner)} unit was destroyed attacking a ship.`;
   else if (result.shoreAttack) state.log = `${sideName(currentOwner)} damaged the enemy ship from shore.`;
+  else if (result.cityDefense?.battle?.loser?.owner === opponentOwner(currentOwner))
+    state.log = result.cityDefense.remaining
+      ? `${sideName(currentOwner)} destroyed one city defender. ${result.cityDefense.remaining} unit${
+          result.cityDefense.remaining === 1 ? "" : "s"
+        } still inside.`
+      : `${sideName(currentOwner)} broke the city defense.`;
+  else if (result.cityDefense?.battle?.loser?.owner === currentOwner)
+    state.log = `${sideName(currentOwner)} unit was destroyed attacking city defenders.`;
+  else if (result.cityHeld) state.log = `${sideName(currentOwner)} won the battle, but city units still defend inside.`;
   else if (result.battle?.loser.owner === opponentOwner(currentOwner)) state.log = `${sideName(currentOwner)} unit won the battle.`;
   else if (result.battle?.loser.owner === currentOwner) state.log = `${sideName(currentOwner)} unit was destroyed in battle.`;
   else if (result.unloaded && result.captured)
@@ -1433,16 +1531,33 @@ function render() {
       if (state.terrain[y][x] === "water") cell.classList.add("water");
 
       const city = cityAt(x, y);
+      const army = armyAt(x, y);
+      const citySquareArmy = city && army?.owner === city.owner ? army : null;
       if (city) {
         cell.classList.add("city");
         if (city.owner === "human") cell.classList.add("human-city");
         if (city.owner === "ai") cell.classList.add("ai-city");
+        const cityUnitCount = (city.garrison?.length || 0) + (citySquareArmy ? 1 : 0);
+        if (cityUnitCount) {
+          cell.classList.add("city-garrisoned");
+          const garrisonMarker = document.createElement("span");
+          garrisonMarker.className = "city-garrison";
+          garrisonMarker.textContent = cityUnitCount;
+          garrisonMarker.setAttribute("aria-hidden", "true");
+          cell.append(garrisonMarker);
+        }
+        if (citySquareArmy && readyArmyIds.has(citySquareArmy.id)) cell.classList.add("ready-cell");
+        if (citySquareArmy?.id === selectedArmy?.id) cell.classList.add("active-cell");
         cell.title = cityProductionText(city);
         cell.ariaLabel = `${cell.ariaLabel}, ${cityProductionText(city)}`;
+        if (citySquareArmy) {
+          const cityArmyTitle = armyTitleText(citySquareArmy);
+          cell.title = `${cityProductionText(city)}\nInside: ${cityArmyTitle}`;
+          cell.ariaLabel = `${cell.ariaLabel}, inside: ${cityArmyTitle}`;
+        }
       }
 
-      const army = armyAt(x, y);
-      if (army) {
+      if (army && !citySquareArmy) {
         const marker = document.createElement("span");
         marker.className = `army ${army.owner} ${army.type}`;
         if (readyArmyIds.has(army.id)) {
@@ -1460,12 +1575,7 @@ function render() {
           cargoCount ? `<span class="army-cargo">${cargoCount}</span>` : ""
         }${fuelText !== null ? `<span class="army-fuel">${fuelText}</span>` : ""}`;
         cell.append(marker);
-        const armyTitle =
-          army.type === "transport"
-            ? `${army.owner} ${unitLabel(army)}, ${army.hp} HP, cargo ${transportCargoUsed(army)} / ${TRANSPORT_CAPACITY}`
-            : Number.isFinite(army.fuel)
-            ? `${army.owner} ${unitLabel(army)}, ${army.hp} HP, fuel ${army.fuel} / ${UNIT_TYPES[army.type]?.fuel}`
-            : `${army.owner} ${unitLabel(army)}, ${army.hp} HP`;
+        const armyTitle = armyTitleText(army);
         cell.title = city ? `${cityProductionText(city)}\n${armyTitle}` : armyTitle;
         cell.ariaLabel = `${cell.ariaLabel}, ${armyTitle}`;
       }

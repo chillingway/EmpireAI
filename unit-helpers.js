@@ -8,6 +8,7 @@
         productionTurns: 3,
         hitPower: 1,
         terrain: "land",
+        canEnterCity: true,
         produceWeight: 55,
       },
       tank: {
@@ -17,6 +18,7 @@
         productionTurns: 6,
         hitPower: 2,
         terrain: "land",
+        canEnterCity: true,
         produceWeight: 22,
       },
       amphibious: {
@@ -26,6 +28,7 @@
         productionTurns: 5,
         hitPower: 1,
         terrain: "amphibious",
+        canEnterCity: true,
         fuel: 10,
         cargoSize: 2,
         produceWeight: 12,
@@ -37,6 +40,7 @@
         productionTurns: 5,
         hitPower: 1,
         terrain: "water",
+        canEnterCity: true,
         produceWeight: 13,
       },
       fighter: {
@@ -46,6 +50,7 @@
         productionTurns: 6,
         hitPower: 3,
         terrain: "air",
+        canEnterCity: true,
         fuel: fighterFuel,
         produceWeight: 10,
       },
@@ -56,6 +61,7 @@
         productionTurns: 12,
         hitPower: 3,
         terrain: "sea",
+        canEnterCity: true,
         fuel: 150,
         produceWeight: 10,
       },
@@ -77,6 +83,7 @@
         strike: config.hitPower ?? config.strike ?? defaults[type]?.hitPower ?? defaults.infantry.hitPower,
         productionTurns: config.productionTurns ?? defaults[type]?.productionTurns ?? defaults.infantry.productionTurns,
         terrain: normalizeTerrain(config.terrain ?? defaults[type]?.terrain ?? defaults.infantry.terrain),
+        canEnterCity: config.canEnterCity ?? defaults[type]?.canEnterCity ?? true,
         produceWeight: config.produceWeight ?? defaults[type]?.produceWeight ?? 1,
         cargoSize: config.cargoSize ?? defaults[type]?.cargoSize,
       };

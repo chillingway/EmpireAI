@@ -370,7 +370,7 @@ function renderBrain() {
 function cloneForSim(baseState) {
   return {
     terrain: baseState.terrain.map((row) => [...row]),
-    cities: baseState.cities.map((city) => ({ ...city })),
+    cities: baseState.cities.map((city) => ({ ...city, garrison: city.garrison?.map((unit) => ({ ...unit })) || [] })),
     armies: baseState.armies.map((army) => ({ ...army, cargo: army.cargo?.map((unit) => ({ ...unit })) })),
     round: baseState.round,
     phase: baseState.phase,
